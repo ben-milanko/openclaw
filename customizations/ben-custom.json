@@ -45,7 +45,15 @@
     "nativeIndependentReview": "passed",
     "sharedSwiftTestsPassed": 226,
     "sharedSwiftSuitesPassed": 10,
-    "appleBuild": "pending",
-    "devicePlayback": "pending"
+    "appleBuild": "signed iPhone development build passed; separate development identity",
+    "devicePlayback": "pending awake/connected physical iPhone",
+    "verifiedCodeCommit": "c9088c0e1da5fd3007970772196a7b7c71a47f03",
+    "nativeSourceSha256": "1d2f6a72915f0b0cfea8968deed84dce5fe3ce76d18f65c217aad0552531e21f",
+    "focusedIosTestsPassed": 79,
+    "focusedIosSuitesPassed": 4,
+    "iosSimulatorCompilation": "passed",
+    "macosAppCompilation": "passed",
+    "syntheticUiTestsPassed": 2,
+    "syntheticVisualInspection": "baseline disabled Send, candidate enabled Send, Steer/Queue menu and accepted follow-up while original reply remains active; inspected"
   }
 }

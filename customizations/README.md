@@ -63,12 +63,29 @@ this public source fork.
 
 ## Maintenance and deployment
 
-Initial focused verification: 41 Gateway tests and 226 shared Swift tests in 10
-suites passed. Source formatting, changed-test type-aware lint and independent
-native review passed. The existing `readMirroredAssistantText` union-type lint
-diagnostic was reproduced unchanged on the upstream baseline; it is not a new
-finding introduced by this integration. iOS build, simulator UI and physical
-playback verification remain separate outcomes in the inventory.
+Verified code revision: `c9088c0e1da5fd3007970772196a7b7c71a47f03`.
+The native source manifest is pinned in the inventory. Verification passed:
+41 Gateway tests, 226 shared Swift tests in 10 suites, and 79 focused iOS tests
+in four suites with complete simulator compilation. The full macOS application
+compiled, and a separately identified iPhone development application built and
+passed deep strict signature verification. Pre/post-build source hashes matched.
+Source formatting, changed-test type-aware lint and independent native review
+passed. The existing `readMirroredAssistantText` union-type lint diagnostic was
+reproduced unchanged on the upstream baseline; it is not a new finding.
+
+Two synthetic UI test runs passed against the exact upstream baseline and this
+candidate. Inspected before/after screenshots show blocked versus enabled Send,
+the Steer/Queue menu, and the follow-up remaining visible with Stop available.
+A UUID-scoped temporary outbox and exact text/mode/original-run admission receipt
+prevented optimistic failed-delivery bubbles from passing the test. Instrumentation
+was confined to isolated proof copies; seven production owners remained unchanged,
+then all fixture edits were restored byte-exactly. The unsigned fixture applications
+are not the signed development artifact. Screenshots and signed artifacts are
+private deliverables, not public source or release uploads.
+
+Physical-phone installation, listening-sound playback and broader scrolling-lag
+measurement are still pending an awake, connected phone. Neither the existing
+Store application nor the running Gateway was replaced by this task.
 
 Update from an explicitly pinned upstream revision in an isolated checkout.
 Reconcile the tracked PR heads and any newer Ben-authored OpenClaw PRs, preserving
