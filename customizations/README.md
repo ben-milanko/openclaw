@@ -62,8 +62,27 @@ OpenClaw. Private settings, credentials, authentication caches, personal
 automation payloads, runtime backups and diagnostic evidence do not belong in
 this public source fork.
 
+## Automation-session filter verification
+
+Verified filter code revision: `49b30c0ad5d43891f3571cf81e17578f117bb4d0`.
+The iOS simulator compiled and 87 focused tests passed (107 parameterized
+executions). The real UI workflow passed: both lists respond to the toggle,
+Briefings and human chats remain visible, and both enabled and disabled states
+survive relaunches. Six synthetic screenshots were inspected; shown/hidden and
+menu proof was delivered as downloadable chat attachments. Temporary demo rows
+and UI-test instrumentation were restored before building the phone application.
+
+The native source hash is
+`b5e91050cc600734ef1904ffeb534068114fa5914e7f563f5c53b2fa54e97c9e`.
+Independent Claude Code review was clean through P2; the Codex review CLI was
+unavailable because it rejected a required helper option. The native localization
+check reproduced the previous development head's same three missing translations;
+this filter adds no untranslated strings. Phone installation and physical-device
+interaction remain distinct from the simulator proof.
+
 ## Maintenance and deployment
 
+The following verification covers the original chat and Talk integration.
 Verified code revision: `c9088c0e1da5fd3007970772196a7b7c71a47f03`.
 The native source manifest is pinned in the inventory. Verification passed:
 41 Gateway tests, 226 shared Swift tests in 10 suites, and 79 focused iOS tests

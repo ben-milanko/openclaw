@@ -55,6 +55,18 @@
     "iosSimulatorCompilation": "passed",
     "macosAppCompilation": "passed",
     "syntheticUiTestsPassed": 2,
-    "syntheticVisualInspection": "baseline disabled Send, candidate enabled Send, Steer/Queue menu and accepted follow-up while original reply remains active; inspected"
+    "syntheticVisualInspection": "baseline disabled Send, candidate enabled Send, Steer/Queue menu and accepted follow-up while original reply remains active; inspected",
+    "iosAutomationSessionFilter": {
+      "verifiedCodeCommit": "49b30c0ad5d43891f3571cf81e17578f117bb4d0",
+      "nativeSourceSha256": "b5e91050cc600734ef1904ffeb534068114fa5914e7f563f5c53b2fa54e97c9e",
+      "focusedIosTestsPassed": 87,
+      "parameterizedExecutionsPassed": 107,
+      "iosSimulatorCompilation": "passed",
+      "syntheticUiTestsPassed": 1,
+      "syntheticVisualInspection": "Six inspected screenshots; shown/hidden and menu proof delivered as downloadable chat attachments",
+      "preferencePersistence": "Enabled and disabled states survived relaunches; sidebar and All Sessions share one device-local preference",
+      "nativeIndependentReview": "Claude Code scoped-clean through P2; Codex CLI unavailable due unsupported helper option",
+      "inheritedNativeI18nFinding": "Same three missing translation IDs reproduced on the previous development head; no new missing strings"
+    }
   }
 }
