@@ -602,6 +602,49 @@ struct RootTabsPresentationTests {
         #expect(Set(layout.sections.flatMap(\.nodes).map(\.session.key)) == ["recent", "expired"])
     }
 
+    @Test(arguments: [false, true], ["", "Automation"])
+    func `automation visibility applies to pinned rows and search without hiding titled human chats`(
+        showAutomationSessions: Bool,
+        query: String) throws
+    {
+        let entries = try JSONDecoder().decode([OpenClawChatSessionEntry].self, from: Data("""
+        [
+          {"key":"agent:main:cron:daily","label":"Automation: Daily","pinned":true},
+          {"key":"agent:main:cron:daily:run:one","label":"Automation: Daily run"},
+          {"key":"cron:legacy","label":"Automation: Legacy"},
+          {"key":"agent:main:ios-human","label":"Automation discussion"},
+          {"key":"agent:main:dashboard:briefings","label":"Briefings","pinned":true}
+        ]
+        """.utf8))
+        let sections = RootSidebarModel.sections(
+            sessions: entries,
+            query: query,
+            currentSessionKey: "agent:main:cron:daily:run:one",
+            mainSessionKey: "main",
+            activeAgentID: "main",
+            groups: [],
+            showAutomationSessions: showAutomationSessions)
+        let layout = RootSidebar.sessionLayout(sections)
+        let keys = Set((layout.pinnedNodes + layout.sections.flatMap(\.nodes)).map(\.session.key))
+        var expected: Set = ["agent:main:ios-human"]
+        if query.isEmpty { expected.insert("agent:main:dashboard:briefings") }
+        if showAutomationSessions {
+            expected.formUnion(["agent:main:cron:daily", "agent:main:cron:daily:run:one", "cron:legacy"])
+        }
+        #expect(keys == expected)
+    }
+
+    @Test func `hidden selected automation does not return as a placeholder before its row loads`() {
+        let sections = RootSidebarModel.sections(
+            sessions: [Self.sessionEntry(key: "agent:main:ios-human")],
+            query: "",
+            currentSessionKey: "agent:main:cron:daily:run:missing",
+            mainSessionKey: "main",
+            activeAgentID: "main",
+            groups: [])
+        #expect(sections.flatMap(\.nodes).map(\.session.key) == ["agent:main:ios-human"])
+    }
+
     @Test func `sidebar agent badges use canonical identity fallback`() {
         #expect(RootSidebar.agentBadge(
             name: "Research Agent",

@@ -1,6 +1,12 @@
 import Foundation
 
 extension ChatSessionSidebarModel {
+    /// Display classification shared by native clients; session titles never determine visibility.
+    public static func isAutomationSession(key: String) -> Bool {
+        let normalized = key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.range(of: #"^(?:cron:|agent::*[^:]+:+cron:+[^:])"#, options: .regularExpression) != nil
+    }
+
     public enum Sort: String, Sendable {
         case created, updated, people
     }
@@ -52,9 +58,7 @@ extension ChatSessionSidebarModel {
         func includes(_ session: OpenClawChatSessionEntry) -> Bool {
             // Port src/shared/session-list-visibility.ts: cron keys own automation,
             // even when system-created; other probes use provenance, never titles.
-            let key = session.key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let automation = key.range(of: #"^(?:cron:|agent::*[^:]+:+cron:+[^:])"#, options: .regularExpression) != nil
-            if automation { return self.showAutomation }
+            if ChatSessionSidebarModel.isAutomationSession(key: session.key) { return self.showAutomation }
             let named = [session.label, session.displayName, session.subject]
                 .contains { ChatPayloadDecoding.trimmedNonEmptyString($0) != nil }
             // src/shared/session-list-visibility.ts:27: a named heartbeat outranks system provenance.

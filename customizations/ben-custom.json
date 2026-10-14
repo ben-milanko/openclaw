@@ -25,7 +25,8 @@
   ],
   "customChanges": [
     "iPhone continuous Talk listening cue at genuine transport readiness",
-    "Caller-correlated owned Codex terminal replies for native Talk"
+    "Caller-correlated owned Codex terminal replies for native Talk",
+    "Persistent iOS automation-session visibility filter in the sidebar and All Sessions, hidden by default"
   ],
   "inheritedFixes": [
     "Admitted internal WebChat source delivery is established at its producer"

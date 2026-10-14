@@ -212,6 +212,7 @@ final class RootSidebarModel {
         mainSessionKey: String,
         activeAgentID: String?,
         groups: [OpenClawChatSessionGroup],
+        showAutomationSessions: Bool = false,
         sessionRoutingContract: String? = nil,
         now: Date = .now) -> [ChatSessionSidebarModel.Section]
     {
@@ -221,13 +222,17 @@ final class RootSidebarModel {
             mainSessionKey: mainSessionKey,
             activeAgentID: activeAgentID,
             sessionRoutingContract: sessionRoutingContract)
-        let selectedIsSnoozed = sessions.contains {
+        let selectedIsHidden = (!showAutomationSessions &&
+            ChatSessionSidebarModel.isAutomationSession(key: selectedSessionKey)) || sessions.contains {
             $0.key == selectedSessionKey && $0.isSnoozed(at: now)
         }
         return ChatSessionSidebarModel.sections(
-            sessions: sessions.filter { !$0.isSnoozed(at: now) },
+            sessions: sessions.filter {
+                !$0.isSnoozed(at: now) &&
+                    (showAutomationSessions || !ChatSessionSidebarModel.isAutomationSession(key: $0.key))
+            },
             // The shared sidebar otherwise creates a placeholder for a missing selected row.
-            currentSessionKey: selectedIsSnoozed ? "" : currentSessionKey,
+            currentSessionKey: selectedIsHidden ? "" : currentSessionKey,
             mainSessionKey: mainSessionKey,
             activeAgentID: activeAgentID,
             groups: groups,

@@ -648,10 +648,15 @@ struct CommandCenterTab: View {
         return formatter.localizedString(for: date, relativeTo: now)
     }
 
-    nonisolated static func isRecentChatSession(_ key: String, defaultSessionKey: String) -> Bool {
+    nonisolated static func isRecentChatSession(
+        _ key: String,
+        defaultSessionKey: String,
+        showAutomationSessions: Bool = true) -> Bool
+    {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         if trimmed == defaultSessionKey { return false }
+        if !showAutomationSessions, ChatSessionSidebarModel.isAutomationSession(key: trimmed) { return false }
         let normalized = trimmed.lowercased()
         let defaultBase = self.sessionBaseKey(defaultSessionKey)
         if !normalized.contains(":"),
@@ -752,6 +757,7 @@ struct CommandSessionsScreen: View {
     @State private var groupEditor: GroupEditor?
     @State private var groupDraftText = ""
     @State private var groupPendingDelete: String?
+    @AppStorage("openclaw.chat.sidebar.showAutomationSessions") private var showAutomationSessions = false
     let headerSidebarAction: OpenClawSidebarHeaderAction?
     let openChat: () -> Void
 
@@ -856,6 +862,7 @@ struct CommandSessionsScreen: View {
                     Text(verbatim: self.panelTitle)
                         .font(OpenClawType.subheadBold)
                     Spacer(minLength: 8)
+                    SessionVisibilityMenu(showAutomationSessions: self.$showAutomationSessions)
                     if self.isLoading {
                         ProgressView()
                             .controlSize(.small)
@@ -944,7 +951,8 @@ struct CommandSessionsScreen: View {
         self.sessions
             .filter { CommandCenterTab.isRecentChatSession(
                 $0.key,
-                defaultSessionKey: self.appModel.mainSessionKey) }
+                defaultSessionKey: self.appModel.mainSessionKey,
+                showAutomationSessions: self.showAutomationSessions) }
             // A stale list must still obey the selected scope while its replacement loads.
             .filter { self.statusScope.includes($0, at: self.now) }
     }

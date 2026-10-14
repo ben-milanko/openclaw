@@ -164,6 +164,12 @@ credentials are not exported to Apple Watch or cloud workers.
 
 ## Sessions
 
+Open **Filters** (the filter icon) in the sidebar or **All Sessions…**
+to turn **Show automation sessions** on or off. Automation chats are hidden by
+default. The same preference applies to both lists, including search and pinned
+sessions, and is saved on this device. It does not stop automations, archive or
+delete their chats, or close a conversation you already have open.
+
 Choose **All Sessions…** in the sidebar to browse **Active**, **Snoozed**, or
 **Archived** sessions. Long-press an eligible session and choose **Snooze**:
 **In 1 hour**, **In 3 hours**, **This evening** (18:00 local, only when more than

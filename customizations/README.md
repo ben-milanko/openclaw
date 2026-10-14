@@ -8,13 +8,14 @@ configuration.
 
 ## Included changes
 
-| Change | Provenance | Treatment |
-| --- | --- | --- |
-| Full audio attachment durations | [PR 171798](https://github.com/openclaw/openclaw/pull/171798), Ben Milanko | Original source change and regression tests |
-| Native Steer/Queue follow-ups during active replies | [PR 168604](https://github.com/openclaw/openclaw/pull/168604), Cavit Erginsoy | Ported to the current native transport/outbox contracts |
-| Completed iPhone bubble render gate | [PR 137462](https://github.com/openclaw/openclaw/pull/137462), roboclaw-bot and Colin | Ported with current metadata, tools, sources and resolver invalidation; dynamic content bypasses the gate |
-| Continuous Talk listening cue | Development customization | Short bundled audio cue on listening transitions; direct WebRTC waits for audio and control readiness |
-| Native Talk terminal-reply correlation | Development customization | Only the exact caller-owned terminal assistant uses the caller run key; source attestation and other row identities remain unchanged |
+| Change                                              | Provenance                                                                            | Treatment                                                                                                                                    |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Full audio attachment durations                     | [PR 171798](https://github.com/openclaw/openclaw/pull/171798), Ben Milanko            | Original source change and regression tests                                                                                                  |
+| Native Steer/Queue follow-ups during active replies | [PR 168604](https://github.com/openclaw/openclaw/pull/168604), Cavit Erginsoy         | Ported to the current native transport/outbox contracts                                                                                      |
+| Completed iPhone bubble render gate                 | [PR 137462](https://github.com/openclaw/openclaw/pull/137462), roboclaw-bot and Colin | Ported with current metadata, tools, sources and resolver invalidation; dynamic content bypasses the gate                                    |
+| Continuous Talk listening cue                       | Development customization                                                             | Short bundled audio cue on listening transitions; direct WebRTC waits for audio and control readiness                                        |
+| Native Talk terminal-reply correlation              | Development customization                                                             | Only the exact caller-owned terminal assistant uses the caller run key; source attestation and other row identities remain unchanged         |
+| iOS automation-session visibility                   | Development customization                                                             | Persistent **Show automation sessions** filter in the sidebar and All Sessions, off by default; jobs and open conversations remain unchanged |
 
 The render gate is a bounded reduction in unnecessary work, **not a claim that
 all physical-iPhone scrolling lag is resolved**. Relative timestamp updates

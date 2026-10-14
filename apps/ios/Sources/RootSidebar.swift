@@ -2,6 +2,29 @@ import OpenClawChatUI
 import OpenClawProtocol
 import SwiftUI
 
+struct SessionVisibilityMenu: View {
+    @Binding var showAutomationSessions: Bool
+    var accessibilityIdentifier = "Sessions.Filters"
+
+    var body: some View {
+        Menu {
+            Toggle(isOn: self.$showAutomationSessions) {
+                Text("Show automation sessions")
+                    .font(OpenClawType.subhead)
+            }
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(OpenClawType.subheadSemiBold)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(OpenClawSidebarPalette.muted)
+        .accessibilityLabel(String(localized: "Filters"))
+        .accessibilityIdentifier(self.accessibilityIdentifier)
+    }
+}
+
 struct RootSidebar: View {
     @Environment(NodeAppModel.self) private var appModel
     @Environment(\.colorScheme) private var colorScheme
@@ -13,6 +36,7 @@ struct RootSidebar: View {
     @State private var presentedAttention: OpenClawChatAttentionPresentation?
     @FocusState private var isSearchFocused: Bool
     @AppStorage("sidebar.pinnedPages") private var pinnedPagesStorage: String = ""
+    @AppStorage("openclaw.chat.sidebar.showAutomationSessions") private var showAutomationSessions = false
 
     let selectedDestination: RootTabs.SidebarDestination
     let isDrawerLayout: Bool
@@ -115,6 +139,10 @@ struct RootSidebar: View {
                     self.searchText = ""
                 }
             }
+
+            SessionVisibilityMenu(
+                showAutomationSessions: self.$showAutomationSessions,
+                accessibilityIdentifier: "RootTabs.Sidebar.Filters")
 
             if self.isDrawerLayout {
                 OpenClawSidebarControlButton(action: self.dismissAction)
@@ -558,6 +586,7 @@ struct RootSidebar: View {
             mainSessionKey: self.appModel.mainSessionKey,
             activeAgentID: self.appModel.chatAgentId,
             groups: self.sessionGroups,
+            showAutomationSessions: self.showAutomationSessions,
             sessionRoutingContract: self.appModel.chatSessionRoutingContract,
             now: self.model.now)
     }

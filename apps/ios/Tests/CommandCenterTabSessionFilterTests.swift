@@ -71,6 +71,14 @@ struct CommandCenterTabSessionFilterTests {
             defaultSessionKey: "main"))
     }
 
+    @Test(arguments: ["cron:legacy", "agent:main:cron:daily", "agent:main:cron:daily:run:one"])
+    func `all sessions respects the automation filter`(key: String) {
+        #expect(!CommandCenterTab.isRecentChatSession(key, defaultSessionKey: "main", showAutomationSessions: false))
+        #expect(CommandCenterTab.isRecentChatSession(key, defaultSessionKey: "main", showAutomationSessions: true))
+        #expect(CommandCenterTab.isRecentChatSession(
+            "agent:main:ios-human", defaultSessionKey: "main", showAutomationSessions: false))
+    }
+
     @Test func `prefers generated display names over ios key placeholders`() {
         func entry(
             key: String,
