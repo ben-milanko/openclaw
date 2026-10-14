@@ -1,0 +1,51 @@
+{
+  "fork": "ben-milanko/openclaw",
+  "branch": "dev/ben-custom",
+  "upstream": "openclaw/openclaw",
+  "upstreamCommit": "fa3e272e21361300a538c2ee1e21502ec5cd1e15",
+  "trackedPullRequests": [
+    {
+      "number": 171798,
+      "head": "763aeb38e9d334ce9f78450f6e953595a6f0d87d",
+      "status": "integrated",
+      "purpose": "Full audio attachment duration labels"
+    },
+    {
+      "number": 168604,
+      "head": "7f2ad38f95a116409c1ca37c842330e1996434c4",
+      "status": "ported",
+      "purpose": "Typed native follow-ups while an assistant run is active"
+    },
+    {
+      "number": 137462,
+      "head": "40fd6d369ac8199c3d7c9356f0bfe458baeefb35",
+      "status": "ported",
+      "purpose": "Avoid unchanged completed iPhone bubble rendering"
+    }
+  ],
+  "customChanges": [
+    "iPhone continuous Talk listening cue at genuine transport readiness",
+    "Caller-correlated owned Codex terminal replies for native Talk"
+  ],
+  "inheritedFixes": [
+    "Admitted internal WebChat source delivery is established at its producer"
+  ],
+  "historicalPullRequests": [
+    {
+      "number": 11464,
+      "status": "closed-unmerged-superseded",
+      "reason": "Current Google image registration is separate from text-model forward compatibility"
+    }
+  ],
+  "validation": {
+    "focusedGatewayTestsPassed": 41,
+    "typeScriptFormatting": "passed",
+    "changedTestTypeAwareLint": "passed",
+    "inheritedTypeAwareLintFinding": "Unchanged readMirroredAssistantText union diagnostic reproduced on the upstream baseline",
+    "nativeIndependentReview": "passed",
+    "sharedSwiftTestsPassed": 226,
+    "sharedSwiftSuitesPassed": 10,
+    "appleBuild": "pending",
+    "devicePlayback": "pending"
+  }
+}

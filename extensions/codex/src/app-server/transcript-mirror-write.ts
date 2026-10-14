@@ -89,6 +89,7 @@ export async function mirror(params: {
     };
   }
 
+  const callerRunId = normalizeOptionalString(params.runId);
   const candidates = messages.map((source) => {
     const message = { ...source };
     const assistantItemIds = takeCodexAssistantItemIds(message);
@@ -98,9 +99,22 @@ export async function mirror(params: {
       message.role === "user"
         ? normalizeOptionalString("idempotencyKey" in message ? message.idempotencyKey : undefined)
         : undefined;
-    // Gateway-owned user keys keep optimistic client rows stable. Other rows use
-    // the provider mirror identity so retries find the exact logical message.
+    const terminalOwner = params.terminalAssistantOwner;
+    const terminalRunId =
+      message.role === "assistant" &&
+      callerRunId &&
+      terminalOwner &&
+      terminalOwner.runId === callerRunId &&
+      readMirrorIdentity(message) === terminalOwner.mirrorIdentity &&
+      (!params.runMirrorIdentityPrefix ||
+        terminalOwner.mirrorIdentity.startsWith(params.runMirrorIdentityPrefix))
+        ? callerRunId
+        : undefined;
+    // Native Talk correlates the caller's terminal reply by its chat run key.
+    // User keys remain Gateway-owned; intermediate/imported rows retain their
+    // provider identities, while attestation still records the exact source row.
     const idempotencyKey =
+      terminalRunId ??
       sourceUserIdempotencyKey ??
       (params.idempotencyScope
         ? buildCodexMirrorIdempotencyKey(params.idempotencyScope, dedupeIdentity)

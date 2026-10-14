@@ -1454,7 +1454,7 @@ describe("runCodexAppServerAttempt", () => {
       errorMessage: disconnectError.message,
     };
     const persistedMessage = (await readTranscriptMessagesByIdentity(params)).find(
-      (message) => message.idempotencyKey === "codex-app-server:thread-1:turn-1:assistant",
+      (message) => message.idempotencyKey === params.runId,
     );
     expect({ preparedMessages, persistedMessage }).toEqual({
       preparedMessages: [expect.objectContaining(expectedAssistant)],

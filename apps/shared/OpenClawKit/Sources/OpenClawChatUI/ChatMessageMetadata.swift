@@ -156,14 +156,23 @@ struct ChatMessageMetadataView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if let time = ChatMessageTimestampPresentation.make(
-                timestamp: self.metadata.timestamp, locale: self.locale, timeZone: self.timeZone)
-            {
-                Text(time.label)
-                    .accessibilityLabel(time.exact)
-                    #if os(macOS)
-                    .help(time.exact)
-                    #endif
+            if self.metadata.timestamp?.isFinite == true {
+                // Completed bubbles can skip transcript re-renders. Relative
+                // timestamp updates belong to the footer's own clock.
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    if let time = ChatMessageTimestampPresentation.make(
+                        timestamp: self.metadata.timestamp,
+                        now: context.date,
+                        locale: self.locale,
+                        timeZone: self.timeZone)
+                    {
+                        Text(time.label)
+                            .accessibilityLabel(time.exact)
+                            #if os(macOS)
+                            .help(time.exact)
+                            #endif
+                    }
+                }
             }
             if let model = self.metadata.model {
                 Text(model.split(separator: "/").last.map(String.init) ?? model)

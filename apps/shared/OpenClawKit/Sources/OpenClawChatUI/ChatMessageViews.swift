@@ -327,6 +327,15 @@ struct ChatMessageBubble: View {
         OpenClawChatMediaKind,
         OpenClawChatPlaybackMode?) async throws -> OpenClawChatLoadedMedia?
 
+    var canUseIOSRenderGate: Bool {
+        guard self.message.isCompletedReply,
+              !self.liveToolCalls.contains(where: { !$0.isComplete })
+        else { return false }
+        return !self.message.content.contains { content in
+            content.isInlineAttachment || (content.type ?? "").lowercased() == "canvas"
+        }
+    }
+
     var body: some View {
         if self.isUser {
             self.messageBody
@@ -361,6 +370,33 @@ struct ChatMessageBubble: View {
 
     private var isUser: Bool {
         self.message.role.lowercased() == "user"
+    }
+}
+
+extension ChatMessageBubble: @MainActor Equatable {
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        // Media/widgets and active tools bypass the gate. Resolver closures are
+        // recreated every transcript pass; their owner-held context revision
+        // invalidates completed source cards when their loading route changes.
+        lhs.message == rhs.message &&
+            lhs.liveToolCalls == rhs.liveToolCalls &&
+            lhs.metadata == rhs.metadata &&
+            lhs.sourcePreviews == rhs.sourcePreviews &&
+            lhs.sourceContextRevision == rhs.sourceContextRevision &&
+            lhs.sourceFaviconsEnabled == rhs.sourceFaviconsEnabled &&
+            lhs.style == rhs.style &&
+            lhs.markdownVariant == rhs.markdownVariant &&
+            lhs.userAccent == rhs.userAccent &&
+            lhs.displayOptions.rawValue == rhs.displayOptions.rawValue &&
+            lhs.assistantName == rhs.assistantName &&
+            lhs.assistantAvatarText == rhs.assistantAvatarText &&
+            lhs.assistantAvatarTint == rhs.assistantAvatarTint &&
+            lhs.showsAssistantAvatar == rhs.showsAssistantAvatar &&
+            lhs.isClean == rhs.isClean &&
+            lhs.contextWindowTokens == rhs.contextWindowTokens &&
+            lhs.userMessageExpanded == rhs.userMessageExpanded &&
+            lhs.inlineWidgetResolverReady == rhs.inlineWidgetResolverReady &&
+            lhs.mediaArtifactResolverReady == rhs.mediaArtifactResolverReady
     }
 }
 
@@ -940,16 +976,24 @@ struct ChatSpeechStatusChip: View {
     }
 }
 
-/// Status footer for a user bubble backed by the durable offline outbox.
+/// Status footer for a user bubble awaiting durable delivery or confirmation.
 @MainActor
 struct ChatOutboxStatusLabel: View {
     let state: OpenClawChatOutboxMessageState
+    var queueMode: OpenClawChatQueueMode?
 
     var body: some View {
         let presentation = self.presentation
         HStack(spacing: 4) {
             Image(systemName: presentation.iconName)
                 .font(.system(size: 10, weight: .semibold))
+            if let modeTitle {
+                Text(modeTitle)
+                    .font(OpenClawChatTypography.caption)
+                Text("·")
+                    .font(OpenClawChatTypography.caption)
+                    .accessibilityHidden(true)
+            }
             Text(presentation.title)
                 .font(OpenClawChatTypography.caption)
         }
@@ -958,6 +1002,17 @@ struct ChatOutboxStatusLabel: View {
         .accessibilityLabel(
             Text(presentation.accessibilityText)
                 .font(OpenClawChatTypography.caption))
+        .accessibilityValue(
+            Text(self.modeTitle ?? LocalizedStringResource(""))
+                .font(OpenClawChatTypography.caption))
+    }
+
+    private var modeTitle: LocalizedStringResource? {
+        switch self.queueMode {
+        case .steer: "Steer"
+        case .followup: "Queue next"
+        case nil: nil
+        }
     }
 
     private var presentation: (
@@ -967,7 +1022,7 @@ struct ChatOutboxStatusLabel: View {
     {
         switch self.state {
         case .queued:
-            ("Queued", "clock", "Queued, sends when reconnected")
+            ("Queued", "clock", "Queued, waiting to send")
         case .sending:
             ("Sending…", "arrow.up.circle", "Sending")
         case .confirming:

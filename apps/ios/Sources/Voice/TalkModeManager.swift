@@ -201,6 +201,7 @@ final class TalkModeManager {
     private var audioSessionIsActive = false
 
     private let audioEngine = AVAudioEngine()
+    @ObservationIgnored private var listeningCuePlayer: AVAudioPlayer?
     private var inputTapInstalled = false
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -294,6 +295,7 @@ final class TalkModeManager {
     @ObservationIgnored private var testPTTFinalizerHandler: (@MainActor () async -> Void)?
     @ObservationIgnored private var testPTTOnceStartedHandler: (@MainActor () async -> Void)?
     @ObservationIgnored private var testPTTReservedHandler: (@MainActor () async -> Void)?
+    @ObservationIgnored private var testListeningCueHandler: (@MainActor () -> Void)?
     @ObservationIgnored private var testRealtimeVoiceSessionCloseRequest:
         (@MainActor (_ method: String, _ paramsJSON: String?) async throws -> Void)?
     #endif
@@ -313,9 +315,42 @@ final class TalkModeManager {
         phase: TalkPhase,
         watchPresentation: TalkWatchPresentation = .phase)
     {
+        let previousPhase = self.phase
         self.phase = phase
         self.watchPresentation = watchPresentation
         self.statusText = text
+        // Continuous Talk owns the ready cue; PTT/dictation and repeated idle status updates do not.
+        if phase == .listening, previousPhase != .listening, self.isEnabled, self.captureMode == .continuous {
+            self.playListeningCue()
+        }
+    }
+
+    private func playListeningCue() {
+        #if DEBUG
+        if let testListeningCueHandler {
+            testListeningCueHandler()
+            return
+        }
+        #endif
+        do {
+            if self.listeningCuePlayer == nil {
+                guard let url = Bundle.main.url(
+                    forResource: "talk-listening", withExtension: "wav", subdirectory: "Audio")
+                else {
+                    self.logger.warning("listening cue missing from app bundle")
+                    return
+                }
+                self.listeningCuePlayer = try AVAudioPlayer(contentsOf: url)
+                self.listeningCuePlayer?.volume = 0.5
+            }
+            // Use Talk's existing speaker/headset route without reconfiguring microphone capture.
+            self.listeningCuePlayer?.currentTime = 0
+            if self.listeningCuePlayer?.play() != true {
+                self.logger.warning("listening cue playback could not start")
+            }
+        } catch {
+            self.logger.warning("listening cue failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private static func shouldRestartRealtimeSession(
@@ -744,6 +779,7 @@ final class TalkModeManager {
 
     func stop() {
         self.isEnabled = false
+        self.listeningCuePlayer?.stop()
         self.invalidateRealtimeVoiceSelection()
         self.cancelPendingStart()
         self.cancelFinishingPushToTalk()
@@ -805,6 +841,7 @@ final class TalkModeManager {
             String(localized: "Paused"),
             phase: .idle,
             watchPresentation: .localized("Paused"))
+        self.listeningCuePlayer?.stop()
         self.lastTranscript = ""
         self.lastHeard = nil
         self.silenceTask?.cancel()
@@ -2001,9 +2038,9 @@ final class TalkModeManager {
                 supportsVoiceSelection: supportsVoiceSelection,
                 voiceChangeID: voiceChange?.changeid,
                 prefetchedSession: prefetchedSession)
-            if voiceChange != nil {
-                try await session.waitUntilReady()
-            }
+            // SDP setup can finish before audio/control are connected. Initial startup and
+            // voice replacement share the same bounded transport-readiness boundary.
+            try await session.waitUntilReady()
             guard self.realtimeSession === session, self.isCurrentStartAttempt(attemptID) else {
                 self.finishStaleRealtimeStart(
                     session,
@@ -4184,6 +4221,14 @@ private final class AudioTapDiagnostics: @unchecked Sendable {
 extension TalkModeManager: TalkRealtimeWebRTCSessionDelegate {
     func realtimeSession(_ session: TalkRealtimeWebRTCSession, didChangeStatus status: String) {
         guard session === self.realtimeSession else { return }
+        if status == "Listening", !session.isReady {
+            // SDP setup gives WebRTC continuous capture ownership, including terminal recovery,
+            // but it cannot invite speech until audio and the control channel are connected.
+            if self.captureMode != .pushToTalk {
+                self.captureMode = .continuous
+            }
+            return
+        }
         GatewayDiagnostics.log("talk.timeline realtime status=\(status)")
         self.isSpeaking = self.updateRealtimeStatus(status, readyStatus: "Listening") == .speaking
         if !self.isSpeaking {
@@ -4246,6 +4291,22 @@ extension TalkModeManager: TalkRealtimeWebRTCSessionDelegate {
 
 #if DEBUG
 extension TalkModeManager {
+    func _test_prepareDirectRealtimeSessionForListening() -> TalkRealtimeWebRTCSession {
+        self._test_prepareEnabledRealtimeSessionForClose()
+        let session = TalkRealtimeWebRTCSession(
+            gateway: GatewayNodeSession(),
+            sessionKey: self.mainSessionKey,
+            transcriptStore: self.realtimeTranscriptStore,
+            delegate: self)
+        self.realtimeSession = session
+        self.realtimeSession(session, didChangeStatus: "Connecting")
+        return session
+    }
+
+    func _test_setListeningCueHandler(_ handler: (@MainActor () -> Void)?) {
+        self.testListeningCueHandler = handler
+    }
+
     func _test_preparePrefetchedRealtimeVoiceSession(
         _ voiceSessionId: String,
         gateway: GatewayNodeSession,

@@ -244,6 +244,10 @@ final class TalkRealtimeWebRTCSession: NSObject {
         self.adoptedVoiceSessionId
     }
 
+    var isReady: Bool {
+        self.peerReady
+    }
+
     var voiceSessionOwner: TalkRealtimeVoiceSessionOwner? {
         guard let voiceSessionId, let gatewayRoute else { return nil }
         return TalkRealtimeVoiceSessionOwner(
@@ -457,6 +461,10 @@ final class TalkRealtimeWebRTCSession: NSObject {
     #if DEBUG
     func _test_reportTranscriptPersistenceFailure(entryId: String, error: Error) {
         self.reportTranscriptPersistenceFailure(entryId: entryId, error: error)
+    }
+
+    func _test_observeReadiness(iceConnected: Bool, dataChannelOpen: Bool) {
+        self.observeReadiness(iceConnected: iceConnected, dataChannelOpen: dataChannelOpen)
     }
     #endif
 
@@ -1055,10 +1063,14 @@ extension TalkRealtimeWebRTCSession {
     }
 
     private func observeReadiness() {
-        guard !self.stopped, let peer = peerConnection,
-              peer.iceConnectionState == .connected || peer.iceConnectionState == .completed,
-              dataChannel?.readyState == .open
-        else { return }
+        self.observeReadiness(
+            iceConnected: self.peerConnection?.iceConnectionState == .connected ||
+                self.peerConnection?.iceConnectionState == .completed,
+            dataChannelOpen: self.dataChannel?.readyState == .open)
+    }
+
+    private func observeReadiness(iceConnected: Bool, dataChannelOpen: Bool) {
+        guard !self.stopped, iceConnected, dataChannelOpen else { return }
         self.peerReady = true
         self.finishReadiness()
     }
@@ -1311,6 +1323,7 @@ extension TalkRealtimeWebRTCSession: RTCPeerConnectionDelegate {
                     self.delegate?.realtimeSession(self, didChangeStatus: "Listening")
                 }
             case .disconnected:
+                self.peerReady = false
                 self.delegate?.realtimeSession(self, didChangeStatus: "Reconnecting")
             case .failed, .closed:
                 self.delegate?.realtimeSession(self, didChangeStatus: "Realtime disconnected")
@@ -1328,6 +1341,7 @@ extension TalkRealtimeWebRTCSession: RTCPeerConnectionDelegate {
         Task { @MainActor in
             self.dataChannel = dataChannel
             dataChannel.delegate = self
+            self.observeReadiness()
         }
     }
 }

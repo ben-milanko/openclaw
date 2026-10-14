@@ -789,14 +789,24 @@ extension OpenClawChatView {
                     kind: kind,
                     playback: playback)
             })
-            .frame(
-                maxWidth: .infinity,
-                alignment: isUser ? .trailing : .leading)
         let row = VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
-            bubble
+            Group {
+                #if os(iOS)
+                // Streaming updates still invalidate the transcript container;
+                // unchanged completed iPhone bubbles keep their rendered subtree.
+                if bubble.canUseIOSRenderGate {
+                    bubble.equatable()
+                } else {
+                    bubble
+                }
+                #else
+                bubble
+                #endif
+            }
+            .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
             ChatMessageReactions(viewModel: self.viewModel, message: msg)
             if let outboxState = self.viewModel.outboxState(for: msg.id) {
-                ChatOutboxStatusLabel(state: outboxState)
+                ChatOutboxStatusLabel(state: outboxState, queueMode: self.viewModel.outboxQueueMode(for: msg.id))
                     .padding(.trailing, 8)
             }
             if let speech = self.speech,
