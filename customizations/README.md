@@ -6,6 +6,41 @@ The fork's existing `main`, original feature branches and upstream PRs are not
 rewritten. `ben-custom.json` is the source/provenance inventory, not deployment
 configuration.
 
+## PR-first development
+
+New substantive changes use feature branches from the published development
+head and focused pull requests targeting `dev/ben-custom`. Keep the problem,
+source credit, test results and review status with each PR. Run the affected
+checks before publication and distinguish prior-head proof from current PR CI.
+Merge only within the task authority already granted. Small documentation
+updates and build receipts do not need separate PRs.
+
+Generally useful fixes can also be submitted upstream from clean,
+upstream-based branches. Link dependencies and overlapping contributions;
+exclude fork preferences, the customization inventory and build metadata.
+Keep original contributor PRs and credit rather than publishing replacements.
+The automation filter and listening cue stay fork-only until their intended
+upstream behavior is agreed. Existing integrated commits remain in place;
+PR-first does not require rewriting their history.
+
+Authorized upstream-sync and verified patch-retirement PRs may merge into the
+development branch after the required gates; this does not authorize upstream
+or main-branch merges. Development builds and iPhone installation follow their
+separately authorized maintenance procedure, without changing the live Gateway,
+Mac app or Store app. Public PR text identifies Alder as Ben's AI assistant
+acting on his behalf. AI review is separate from Ben's approval and physical
+acceptance.
+
+## Upstream submissions
+
+- [Native Talk lifecycle and reply read-back](https://github.com/openclaw/openclaw/pull/173035).
+- [Talk progress speech](https://github.com/openclaw/openclaw/pull/173037), dependent on the lifecycle repair.
+- [Archived-session sidebar visibility](https://github.com/openclaw/openclaw/pull/173032).
+
+These fixes already exist in the development branch. The upstream branches
+exclude fork-only preferences and metadata. The existing audio-duration,
+busy-send and completed-bubble PRs retain their original contribution records.
+
 ## Included changes
 
 | Change                                              | Provenance                                                                            | Treatment                                                                                                                                    |
