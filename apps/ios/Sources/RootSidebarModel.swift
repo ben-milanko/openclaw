@@ -187,7 +187,7 @@ final class RootSidebarModel {
     private(set) var cronJobs: [CronJob] = []
     private(set) var isRefreshing = false
     private(set) var sessionErrorText: String?
-    private(set) var isSessionRosterComplete = true
+    private(set) var isSessionRosterComplete = false
     private var rosterGeneration = 0
     private var sessionObserverVisibility = false
     private var sessionObserverSync: Task<Void, Never>?
@@ -213,6 +213,7 @@ final class RootSidebarModel {
         activeAgentID: String?,
         groups: [OpenClawChatSessionGroup],
         showAutomationSessions: Bool = false,
+        rosterIsComplete: Bool = false,
         sessionRoutingContract: String? = nil,
         now: Date = .now) -> [ChatSessionSidebarModel.Section]
     {
@@ -222,16 +223,18 @@ final class RootSidebarModel {
             mainSessionKey: mainSessionKey,
             activeAgentID: activeAgentID,
             sessionRoutingContract: sessionRoutingContract)
+        let selectedSession = sessions.first { $0.key == selectedSessionKey }
         let selectedIsHidden = (!showAutomationSessions &&
-            ChatSessionSidebarModel.isAutomationSession(key: selectedSessionKey)) || sessions.contains {
-            $0.key == selectedSessionKey && $0.isSnoozed(at: now)
-        }
+            ChatSessionSidebarModel.isAutomationSession(key: selectedSessionKey)) ||
+            (selectedSession.map { !SessionStatusScope.active.includes($0, at: now) } ?? rosterIsComplete)
         return ChatSessionSidebarModel.sections(
             sessions: sessions.filter {
-                !$0.isSnoozed(at: now) &&
+                SessionStatusScope.active.includes($0, at: now) &&
                     (showAutomationSessions || !ChatSessionSidebarModel.isAutomationSession(key: $0.key))
             },
-            // The shared sidebar otherwise creates a placeholder for a missing selected row.
+            // A complete active roster omits archived rows. Do not recreate them as
+            // selected placeholders; keep placeholders while cached or partial data catches up.
+            // New/switch selections trigger an immediate roster refresh in RootTabs.
             currentSessionKey: selectedIsHidden ? "" : currentSessionKey,
             mainSessionKey: mainSessionKey,
             activeAgentID: activeAgentID,

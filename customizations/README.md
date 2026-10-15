@@ -82,6 +82,19 @@ interaction remain distinct from the simulator proof.
 
 ## Maintenance and deployment
 
+### Archived-session sidebar behavior
+
+The iOS sidebar uses the same Active scope as All Sessions, including for pinned
+and selected rows. A complete active roster is authoritative: a selected key
+omitted from it is not synthesized as a placeholder. Cached or partial rosters
+still allow placeholders while loading. This does not close the open chat.
+
+New Chat creates the Gateway session before switching, and RootTabs immediately
+refreshes the roster whenever the selected key changes. A newly switched row may
+therefore wait for that refresh before appearing in the sidebar; the conversation
+itself stays open. This bounded tradeoff avoids maintaining a second archive-key
+cache or fetching the entire archive on every sidebar refresh.
+
 The following verification covers the original chat and Talk integration.
 Verified code revision: `c9088c0e1da5fd3007970772196a7b7c71a47f03`.
 The native source manifest is pinned in the inventory. Verification passed:

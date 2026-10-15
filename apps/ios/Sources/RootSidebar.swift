@@ -587,6 +587,7 @@ struct RootSidebar: View {
             activeAgentID: self.appModel.chatAgentId,
             groups: self.sessionGroups,
             showAutomationSessions: self.showAutomationSessions,
+            rosterIsComplete: self.model.isSessionRosterComplete,
             sessionRoutingContract: self.appModel.chatSessionRoutingContract,
             now: self.model.now)
     }
