@@ -68,7 +68,6 @@ private struct TalkSpeechLanguageSelection: Equatable {
 
 @MainActor
 private final class TranscriptStreamingOwner {
-    var task: Task<Void, Never>?
     var speechGeneration: Int?
     var terminalStatus: (
         text: String,
@@ -287,6 +286,7 @@ final class TalkModeManager {
         systemVoice: nil)
     private var incrementalSpeechBuffer = IncrementalSpeechBuffer()
     private var incrementalSpeechContext: IncrementalSpeechContext?
+    private var incrementalGatewayContext: TalkGatewayContext?
     private var incrementalSpeechPrefetch: IncrementalSpeechPrefetchState?
     private var incrementalSpeechPrefetchContext: IncrementalSpeechContext?
 
@@ -1727,10 +1727,6 @@ final class TalkModeManager {
             context: context,
             transcriptProcessingGeneration: generation,
             streamingOwner: streamingOwner)
-        streamingOwner.task?.cancel()
-        if let streamingTask = streamingOwner.task {
-            await streamingTask.value
-        }
         await self.quiesceTranscriptSpeech(ownedGeneration: streamingOwner.speechGeneration)
         if self.isCurrentTranscriptProcessing(generation),
            let terminalStatus = streamingOwner.terminalStatus
@@ -1785,7 +1781,7 @@ final class TalkModeManager {
             let runId = UUID().uuidString
             let completionSubscription = await gateway.makeServerEventSubscription(
                 bufferingNewest: 200,
-                matching: { Self.matchesChatEvent($0, runId: runId) })
+                matching: { Self.matchesTranscriptEvent($0, runId: runId) })
             defer { completionSubscription.cancel() }
             let completionEvents = completionSubscription.events
             guard await gateway.currentRoute() == context.route else { return }
@@ -1865,31 +1861,20 @@ final class TalkModeManager {
     {
         let runId = acknowledgement.runId
         let shouldIncremental = !self.runtimeRoute.usesGatewayTalkSpeak
-        if shouldIncremental {
-            self.resetIncrementalSpeech()
-            streamingOwner.speechGeneration = self.speechGeneration
-        }
+        self.resetIncrementalSpeech()
+        streamingOwner.speechGeneration = self.speechGeneration
+        self.incrementalGatewayContext = shouldIncremental ? nil : context
         let completion: ChatCompletionResult
         if ChatSendStatus.acceptance(of: acknowledgement.status) == .terminalSuccess {
             GatewayDiagnostics.log("talk: chat.send terminal ok runId=\(runId); using history fallback")
             completion = ChatCompletionResult(state: .final, assistantText: nil)
         } else {
-            if shouldIncremental {
-                let speechGeneration = self.speechGeneration
-                streamingOwner.task = Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    await self.streamAssistant(
-                        runId: runId,
-                        context: context,
-                        speechGeneration: speechGeneration,
-                        transcriptProcessingGeneration: generation)
-                }
-            }
             guard let completionEvents = streamingOwner.completionEvents else { return nil }
             completion = await self.waitForChatCompletion(
                 runId: runId,
                 context: context,
-                stream: completionEvents)
+                stream: completionEvents,
+                speechGeneration: self.speechGeneration)
             guard self.isCurrentTranscriptProcessing(generation) else { return nil }
             guard await context.gateway.currentRoute() == context.route else { return nil }
             if completion.state == .timeout {
@@ -1902,7 +1887,6 @@ final class TalkModeManager {
                 self.logger.warning(
                     "chat completion \(state, privacy: .public) runId=\(runId, privacy: .public)")
                 GatewayDiagnostics.log("talk: chat completion \(state) runId=\(runId)")
-                streamingOwner.task?.cancel()
                 await self.finishIncrementalSpeech()
                 guard self.isCurrentTranscriptProcessing(generation) else { return nil }
                 streamingOwner.terminalStatus = (
@@ -1931,7 +1915,6 @@ final class TalkModeManager {
         guard let assistantText else {
             self.logger.warning("assistant text timeout runId=\(runId, privacy: .public)")
             GatewayDiagnostics.log("talk: assistant text timeout runId=\(runId)")
-            streamingOwner.task?.cancel()
             await self.finishIncrementalSpeech()
             guard self.isCurrentTranscriptProcessing(generation) else { return nil }
             streamingOwner.terminalStatus = (
@@ -1942,17 +1925,15 @@ final class TalkModeManager {
         }
         self.logger.info("assistant text ok chars=\(assistantText.count, privacy: .public)")
         GatewayDiagnostics.log("talk: assistant text ok chars=\(assistantText.count)")
-        streamingOwner.task?.cancel()
         if shouldIncremental {
             guard let speechGeneration = streamingOwner.speechGeneration else { return nil }
             return await self.handleIncrementalAssistantFinal(
                 text: assistantText,
                 speechGeneration: speechGeneration)
         }
-        await self.playAssistant(
-            text: assistantText,
-            context: context)
-        return true
+        self.enqueueIncrementalSpeech(assistantText)
+        await self.finishIncrementalSpeech()
+        return self.isCurrentTranscriptProcessing(generation)
     }
 
     private func quiesceTranscriptSpeech(ownedGeneration: Int?) async {
@@ -2675,12 +2656,18 @@ final class TalkModeManager {
             includeVoiceDirectiveHint: false)
     }
 
-    private nonisolated static func matchesChatEvent(_ event: EventFrame, runId: String) -> Bool {
-        guard event.event == "chat", let payload = event.payload else { return false }
-        let chatEvent = try? GatewayPayloadDecoding.decode(
-            payload,
-            as: OpenClawChatEventPayload.self)
-        return chatEvent?.runId == runId
+    private nonisolated static func matchesTranscriptEvent(_ event: EventFrame, runId: String) -> Bool {
+        guard let payload = event.payload else { return false }
+        if event.event == "chat" {
+            let chatEvent = try? GatewayPayloadDecoding.decode(payload, as: OpenClawChatEventPayload.self)
+            return chatEvent?.runId == runId
+        }
+        guard event.event == "agent",
+              let progress = try? GatewayPayloadDecoding.decode(payload, as: OpenClawAgentEventPayload.self)
+        else { return false }
+        return progress.runId == runId && progress.stream == "item" &&
+            progress.data["kind"]?.value as? String == "preamble" &&
+            progress.data["phase"]?.value as? String == "end"
     }
 
     private static func chatSendHistorySince(
@@ -2713,20 +2700,34 @@ final class TalkModeManager {
     private func waitForChatCompletion(
         runId: String,
         context: TalkGatewayContext,
-        stream: AsyncStream<EventFrame>) async -> ChatCompletionResult
+        stream: AsyncStream<EventFrame>,
+        speechGeneration: Int) async -> ChatCompletionResult
     {
         // The Gateway owns the execution deadline. The subscription is cancelled
         // when Talk stops, changes session, or loses its route.
         var latestAssistantText: String?
+        var spokenProgressItems: Set<String> = []
         for await evt in stream {
-            if Task.isCancelled {
-                return ChatCompletionResult(state: .timeout, assistantText: latestAssistantText)
-            }
             guard await context.gateway.currentRoute() == context.route else {
                 return ChatCompletionResult(state: .timeout, assistantText: latestAssistantText)
             }
-            if Task.isCancelled {
+            if !self.isCurrentSpeechGeneration(speechGeneration) {
                 return ChatCompletionResult(state: .timeout, assistantText: latestAssistantText)
+            }
+            if evt.event == "agent" {
+                guard let payload = evt.payload,
+                      let progress = try? GatewayPayloadDecoding.decode(payload, as: OpenClawAgentEventPayload.self),
+                      progress.runId == runId,
+                      let itemID = (progress.data["itemId"]?.value as? String)?.trimmedNonEmpty,
+                      let text = (progress.data["progressText"]?.value as? String)?.trimmedNonEmpty
+                else { continue }
+                let silent = text.trimmingCharacters(in: .whitespacesAndNewlines.union(
+                    CharacterSet(charactersIn: "*_`~"))).caseInsensitiveCompare("NO_REPLY") == .orderedSame
+                guard !silent, spokenProgressItems.insert(itemID).inserted else { continue }
+                // Preambles are separate completed messages, not snapshots of the
+                // final answer. Keep them out of its cumulative speech buffer.
+                self.enqueueIncrementalSpeech(text)
+                continue
             }
             guard let payload = evt.payload,
                   let chatEvent = try? GatewayPayloadDecoding.decode(
@@ -2738,6 +2739,14 @@ final class TalkModeManager {
             }
             if let text = OpenClawChatEventText.assistantText(from: chatEvent) {
                 latestAssistantText = text
+                if !self.runtimeRoute.usesGatewayTalkSpeak,
+                   chatEvent.state == "delta" || chatEvent.state == "final"
+                {
+                    await self.ingestAssistantSnapshot(text: text, speechGeneration: speechGeneration)
+                    guard self.isCurrentSpeechGeneration(speechGeneration) else {
+                        return ChatCompletionResult(state: .timeout, assistantText: nil)
+                    }
+                }
             }
             switch chatEvent.state {
             case "final":
@@ -2838,22 +2847,8 @@ final class TalkModeManager {
 
         let languages = self.resolvedSpeechLanguages(directiveLanguage: directive?.language)
         if self.runtimeRoute.usesGatewayTalkSpeak {
-            do {
-                try await self.playGatewayTalkSpeak(
-                    text: cleaned,
-                    directive: directive,
-                    generation: speechGeneration,
-                    context: context)
-            } catch is CancellationError {
-                return
-            } catch {
-                guard !Task.isCancelled, self.speechGeneration == speechGeneration else { return }
-                let errorMessage = error.localizedDescription
-                self.logger.error("gateway TTS failed: \(errorMessage, privacy: .public); falling back to system voice")
-                GatewayDiagnostics.log("talk tts: provider=system (gateway error) msg=\(error.localizedDescription)")
-                await self.playSystemVoiceFallback(
-                    text: cleaned, language: languages.systemVoice, generation: speechGeneration)
-            }
+            await self.playGatewayAssistant(
+                text: cleaned, directive: directive, generation: speechGeneration, context: context)
             return
         }
 
@@ -2889,6 +2884,30 @@ final class TalkModeManager {
             GatewayDiagnostics.log("talk tts: provider=system (error) msg=\(error.localizedDescription)")
             await self.playSystemVoiceFallback(
                 text: cleaned, language: languages.systemVoice, generation: speechGeneration)
+        }
+    }
+
+    private func playGatewayAssistant(
+        text: String,
+        directive: TalkDirective?,
+        generation: Int,
+        context: TalkGatewayContext?) async
+    {
+        do {
+            try await self.playGatewayTalkSpeak(
+                text: text, directive: directive, generation: generation, context: context)
+        } catch is CancellationError {
+            return
+        } catch {
+            guard self.isCurrentSpeechGeneration(generation) else { return }
+            self.logger
+                .error(
+                    "gateway TTS failed: \(error.localizedDescription, privacy: .public); falling back to system voice")
+            GatewayDiagnostics.log("talk tts: provider=system (gateway error) msg=\(error.localizedDescription)")
+            await self.playSystemVoiceFallback(
+                text: text,
+                language: self.resolvedSpeechLanguages(directiveLanguage: directive?.language).systemVoice,
+                generation: generation)
         }
     }
 
@@ -3114,6 +3133,7 @@ final class TalkModeManager {
         self.cancelIncrementalPrefetch()
         self.incrementalSpeechActive = false
         self.incrementalSpeechContext = nil
+        self.incrementalGatewayContext = nil
     }
 
     private func enqueueIncrementalSpeech(_ text: String) {
@@ -3148,6 +3168,18 @@ final class TalkModeManager {
                 self.setStatus(String(localized: "Speaking…"), phase: .speaking)
                 self.isSpeaking = true
                 self.lastSpokenText = segment
+                if let gatewayContext = self.incrementalGatewayContext {
+                    let parsed = TalkDirectiveParser.parse(segment)
+                    self.applyDirective(parsed.directive)
+                    self.setStatus(String(localized: "Generating voice…"), phase: .speaking)
+                    await self.playGatewayAssistant(
+                        text: parsed.stripped,
+                        directive: parsed.directive,
+                        generation: speechGeneration,
+                        context: gatewayContext)
+                    guard self.isCurrentSpeechGeneration(speechGeneration) else { return }
+                    continue
+                }
                 guard await self.updateIncrementalContextIfNeeded(speechGeneration: speechGeneration),
                       let context = self.incrementalSpeechContext
                 else { return }
@@ -3289,45 +3321,16 @@ final class TalkModeManager {
         return !Task.isCancelled
     }
 
-    private func streamAssistant(
-        runId: String,
-        context: TalkGatewayContext,
-        speechGeneration: Int,
-        transcriptProcessingGeneration generation: UInt64) async
-    {
-        let subscription = await context.gateway.makeServerEventSubscription(
-            bufferingNewest: 200,
-            matching: { Self.matchesChatEvent($0, runId: runId) })
-        defer { subscription.cancel() }
-        let stream = subscription.events
-        guard self.isCurrentTranscriptProcessing(generation) else { return }
-        for await evt in stream {
-            guard self.isCurrentTranscriptProcessing(generation) else { return }
-            guard await context.gateway.currentRoute() == context.route else { return }
-            guard self.isCurrentTranscriptProcessing(generation),
-                  self.isCurrentSpeechGeneration(speechGeneration)
-            else { return }
-            guard let payload = evt.payload else { continue }
-            guard let chatEvent = try? GatewayPayloadDecoding.decode(
-                payload,
-                as: OpenClawChatEventPayload.self)
-            else {
-                continue
-            }
-            guard chatEvent.runId == runId else { continue }
-            guard chatEvent.state == "delta" || chatEvent.state == "final" else { continue }
-            guard let text = OpenClawChatEventText.assistantText(from: chatEvent) else { continue }
-            let segments = self.incrementalSpeechBuffer.ingest(text: text, isFinal: false)
-            if let lang = incrementalSpeechBuffer.directive?.language {
-                self.incrementalSpeechLanguages = self.resolvedSpeechLanguages(directiveLanguage: lang)
-            }
-            guard await self.updateIncrementalContextIfNeeded(speechGeneration: speechGeneration) else { return }
-            guard self.isCurrentTranscriptProcessing(generation),
-                  self.isCurrentSpeechGeneration(speechGeneration)
-            else { return }
-            for segment in segments {
-                self.enqueueIncrementalSpeech(segment)
-            }
+    private func ingestAssistantSnapshot(text: String, speechGeneration: Int) async {
+        let segments = self.incrementalSpeechBuffer.ingest(text: text, isFinal: false)
+        if let lang = self.incrementalSpeechBuffer.directive?.language {
+            self.incrementalSpeechLanguages = self.resolvedSpeechLanguages(directiveLanguage: lang)
+        }
+        guard await self.updateIncrementalContextIfNeeded(speechGeneration: speechGeneration),
+              self.isCurrentSpeechGeneration(speechGeneration)
+        else { return }
+        for segment in segments {
+            self.enqueueIncrementalSpeech(segment)
         }
     }
 
