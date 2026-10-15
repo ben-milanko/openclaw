@@ -84,6 +84,19 @@
       "launch": "Passed after Ben unlocked the phone; existing development node connected to the Gateway",
       "liveNodeReadback": "device.info returned 2026.10.3/build 3; subsequent device.status succeeded",
       "physicalSidebarInteraction": "Not independently observed; full synthetic before/after UI verified"
+    },
+    "iosTalkReadback": {
+      "verifiedCodeCommit": "f9236f3dd6b76f97f81e2fabdee0badae73551c7",
+      "nativeSourceSha256": "fac57c01e3b8479f28952a6fb5902dba29cfa9cf8aeb9d19403d4c3b9ec410fe",
+      "focusedIosTestsPassed": 61,
+      "parameterizedExecutionsPassed": 63,
+      "focusedIosSuitesPassed": 3,
+      "baselineRegressionFailures": 4,
+      "iosSimulatorCompilation": "passed",
+      "nativeIndependentReview": "Codex scoped-clean through P1; Opus SDK review complete, with route-loss concern checked against existing invalidation callbacks",
+      "signedDeviceBuild": "2026.10.3/build 4; strict signature and all four development bundle/profile checks passed",
+      "physicalInstallation": "Provider app listing verified build 4; live device.info returned build 4 and device.status succeeded after launch",
+      "physicalPlayback": "Not independently observed; development app must be open for final audio and active-indicator verification"
     }
   }
 }
