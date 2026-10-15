@@ -31,6 +31,16 @@ Mac app or Store app. Public PR text identifies Alder as Ben's AI assistant
 acting on his behalf. AI review is separate from Ben's approval and physical
 acceptance.
 
+## Upstream submissions
+
+- [Native Talk lifecycle and reply read-back](https://github.com/openclaw/openclaw/pull/173035).
+- [Talk progress speech](https://github.com/openclaw/openclaw/pull/173037), dependent on the lifecycle repair.
+- [Archived-session sidebar visibility](https://github.com/openclaw/openclaw/pull/173032).
+
+These fixes already exist in the development branch. The upstream branches
+exclude fork-only preferences and metadata. The existing audio-duration,
+busy-send and completed-bubble PRs retain their original contribution records.
+
 ## Included changes
 
 | Change                                              | Provenance                                                                            | Treatment                                                                                                                                    |

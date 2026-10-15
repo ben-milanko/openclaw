@@ -21,6 +21,24 @@
       "head": "40fd6d369ac8199c3d7c9356f0bfe458baeefb35",
       "status": "ported",
       "purpose": "Avoid unchanged completed iPhone bubble rendering"
+    },
+    {
+      "number": 173032,
+      "head": "31acc98563343024833ffd81f3c0bce43ebc64b0",
+      "status": "implemented-in-fork-upstream-open",
+      "purpose": "iOS archived-session sidebar visibility; independent upstream extraction"
+    },
+    {
+      "number": 173035,
+      "head": "78220c2a9cd3261afc5e16f0efebe3332d259bef",
+      "status": "implemented-in-fork-upstream-open",
+      "purpose": "Native iOS Talk lifecycle and canonical history read-back; upstream extraction"
+    },
+    {
+      "number": 173037,
+      "head": "4708734ecf72331c639cda2af39eac59166b899f",
+      "status": "implemented-in-fork-upstream-open",
+      "purpose": "Native iOS Talk progress speech; stacked on PR173035"
     }
   ],
   "customChanges": [
@@ -28,7 +46,8 @@
     "Caller-correlated owned Codex terminal replies for native Talk",
     "Persistent iOS automation-session visibility filter in the sidebar and All Sessions, hidden by default",
     "iOS sidebar respects Active archive and snooze visibility for selected chats without recreating hidden placeholders",
-    "Native iOS Talk inherits the Gateway execution deadline and reads back only its own run, including canonical history fallback"
+    "Native iOS Talk inherits the Gateway execution deadline and reads back only its own run, including canonical history fallback",
+    "Native iOS Talk speaks completed public progress before final replies and cancels queued speech on Stop or disconnect"
   ],
   "inheritedFixes": [
     "Admitted internal WebChat source delivery is established at its producer"
