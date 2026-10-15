@@ -105,9 +105,10 @@ tradeoff described above, not relabeled scoped-clean.
 
 Development build 3 passed deep strict signature and all four bundle/profile
 checks. Installation and a fresh phone app listing confirm 2026.10.3/build 3.
-The phone was locked when launch was attempted, so launch and live connection
-readback remain pending unlock. Physical sidebar interaction is not independently
-observed. The Store app and live Gateway were not changed.
+After Ben unlocked the phone, launch succeeded and the existing development node
+connected to the Gateway. Live device.info returned 2026.10.3/build 3, and a
+subsequent device.status request succeeded. Physical sidebar interaction is not
+independently observed. The Store app and live Gateway were not changed.
 
 The following verification covers the original chat and Talk integration.
 Verified code revision: `c9088c0e1da5fd3007970772196a7b7c71a47f03`.
@@ -130,9 +131,9 @@ then all fixture edits were restored byte-exactly. The unsigned fixture applicat
 are not the signed development artifact. Screenshots and signed artifacts are
 private deliverables, not public source or release uploads.
 
-Physical-phone installation, listening-sound playback and broader scrolling-lag
-measurement are still pending an awake, connected phone. Neither the existing
-Store application nor the running Gateway was replaced by this task.
+Physical-phone installation and live build 3 connection are verified above.
+Listening-sound playback and broader scrolling-lag measurement remain unobserved.
+Neither the existing Store application nor the running Gateway was replaced.
 
 Update from an explicitly pinned upstream revision in an isolated checkout.
 Reconcile the tracked PR heads and any newer Ben-authored OpenClaw PRs, preserving

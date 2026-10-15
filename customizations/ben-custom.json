@@ -48,7 +48,7 @@
     "sharedSwiftTestsPassed": 226,
     "sharedSwiftSuitesPassed": 10,
     "appleBuild": "signed iPhone development build passed; separate development identity",
-    "devicePlayback": "pending awake/connected physical iPhone",
+    "devicePlayback": "Not independently observed; physical build 3 installation and live connection verified separately",
     "verifiedCodeCommit": "c9088c0e1da5fd3007970772196a7b7c71a47f03",
     "nativeSourceSha256": "1d2f6a72915f0b0cfea8968deed84dce5fe3ce76d18f65c217aad0552531e21f",
     "focusedIosTestsPassed": 79,
@@ -80,7 +80,8 @@
       "nativeIndependentReview": "Claude Code complete with one P2 display tradeoff declined against source; Opus SDK second review complete with no blocking finding. Not labeled scoped-clean.",
       "signedDeviceBuild": "2026.10.3/build 3; deep strict signature and all four development bundle/profile checks passed",
       "physicalInstallation": "Fresh device app listing verifies 2026.10.3/build 3",
-      "launch": "Blocked because physical phone was locked; unlock/launch requested",
+      "launch": "Passed after Ben unlocked the phone; existing development node connected to the Gateway",
+      "liveNodeReadback": "device.info returned 2026.10.3/build 3; subsequent device.status succeeded",
       "physicalSidebarInteraction": "Not independently observed; full synthetic before/after UI verified"
     }
   }
