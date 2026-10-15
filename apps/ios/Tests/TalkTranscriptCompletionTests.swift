@@ -17,10 +17,29 @@ final class TalkTranscriptCompletionTests: XCTestCase {
         try await self.checkTranscriptCompletion(.disconnect)
     }
 
+    func testCompletedProgressIsReadBeforeFinalExactlyOnce() async throws {
+        try await self.checkTranscriptCompletion(.progress)
+    }
+
+    func testStoppingDuringProgressDiscardsQueuedSpeech() async throws {
+        try await self.checkTranscriptCompletion(.progressStop)
+    }
+
+    func testDisconnectingDuringProgressDiscardsQueuedSpeech() async throws {
+        try await self.checkTranscriptCompletion(.progressDisconnect)
+    }
+
     private enum Outcome: Sendable {
         case finalBeforeAcknowledgement
         case stop
         case disconnect
+        case progress
+        case progressStop
+        case progressDisconnect
+
+        var hasProgress: Bool {
+            self == .progress || self == .progressStop || self == .progressDisconnect
+        }
     }
 
     private func checkTranscriptCompletion(_ outcome: Outcome) async throws {
@@ -28,6 +47,10 @@ final class TalkTranscriptCompletionTests: XCTestCase {
         let released = XCTestExpectation(description: "PTT finalizer released audio ownership")
         let requests = TranscriptRequestCapture()
         let synthesizer = TranscriptSpeechSynthesizer()
+        let progressRequested = XCTestExpectation(description: "completed progress reaches speech before final")
+        if outcome.hasProgress {
+            synthesizer.onProgress = { progressRequested.fulfill() }
+        }
         let player = TranscriptAudioPlayer()
         let manager = TalkModeManager(
             allowSimulatorCapture: true,
@@ -62,6 +85,27 @@ final class TalkTranscriptCompletionTests: XCTestCase {
                     try socket.emitReceiveSuccess(.data(Self.finalEvent(
                         runID: runID, text: "The list is fixed.", sequence: 2)))
                 }
+                if outcome.hasProgress {
+                    // Only completed, public progress belonging to this run is speech.
+                    for (index, item) in [
+                        ("foreign-run", "item", "foreign", "end", "Unrelated progress"),
+                        (runID, "reasoning", "private", "end", "Private reasoning"),
+                        (runID, "tool", "tool", "end", "Tool output"),
+                        (runID, "item", "first", "update", "Growing preview"),
+                        (runID, "item", "first", "end", "Let me check."),
+                        (runID, "item", "first", "end", "Let me check."),
+                        (runID, "item", "silent", "end", "**NO_REPLY**"),
+                        (runID, "item", "second", "end", "Still checking."),
+                    ].enumerated() {
+                        try socket.emitReceiveSuccess(.data(Self.progressEvent(
+                            runID: item.0,
+                            stream: item.1,
+                            itemID: item.2,
+                            phase: item.3,
+                            text: item.4,
+                            sequence: index + 1)))
+                    }
+                }
                 payload = ["runId": runID, "status": "started"]
                 let response = try Self.response(id: id, payload: payload)
                 socket.emitReceiveSuccess(.data(response))
@@ -86,17 +130,33 @@ final class TalkTranscriptCompletionTests: XCTestCase {
             let sent = await XCTWaiter.fulfillment(of: [submitted], timeout: 5)
             XCTAssertEqual(sent, .completed)
 
+            if outcome.hasProgress {
+                let heard = await XCTWaiter.fulfillment(of: [progressRequested], timeout: 5)
+                XCTAssertEqual(heard, .completed)
+                XCTAssertEqual(synthesizer.texts, ["Let me check."])
+                XCTAssertTrue(player.payloads.isEmpty, "first synthesis is deliberately still in flight")
+            }
+
             switch outcome {
             case .finalBeforeAcknowledgement:
                 break
-            case .stop:
+            case .progress:
+                let progressRequests = await requests.snapshot()
+                let request = try XCTUnwrap(progressRequests.first)
+                let frame = try XCTUnwrap(JSONSerialization.jsonObject(with: request) as? [String: Any])
+                let params = try XCTUnwrap(frame["params"] as? [String: Any])
+                let runID = try XCTUnwrap(params["idempotencyKey"] as? String)
+                try socket.emitReceiveSuccess(.data(Self.finalEvent(
+                    runID: runID, text: "The list is fixed.", sequence: 9)))
+            case .stop, .progressStop:
                 XCTAssertEqual(manager._test_finishingPushToTalkCaptureId(), capture.captureId)
                 manager.stop()
-            case .disconnect:
+            case .disconnect, .progressDisconnect:
                 XCTAssertEqual(manager._test_finishingPushToTalkCaptureId(), capture.captureId)
                 manager.updateGatewayConnected(false)
                 await gateway.disconnect()
             }
+            synthesizer.completeProgress()
 
             let finished = await XCTWaiter.fulfillment(of: [released], timeout: 5)
             XCTAssertEqual(finished, .completed)
@@ -113,6 +173,12 @@ final class TalkTranscriptCompletionTests: XCTestCase {
             if outcome == .finalBeforeAcknowledgement {
                 XCTAssertEqual(synthesizer.texts, ["The list is fixed."])
                 XCTAssertEqual(player.payloads, [Data([1, 2, 3])])
+            } else if outcome == .progress {
+                XCTAssertEqual(synthesizer.texts, ["Let me check.", "Still checking.", "The list is fixed."])
+                XCTAssertEqual(player.payloads.count, 3)
+            } else if outcome.hasProgress {
+                XCTAssertEqual(synthesizer.texts, ["Let me check."])
+                XCTAssertTrue(player.payloads.isEmpty)
             } else {
                 XCTAssertTrue(synthesizer.texts.isEmpty)
                 XCTAssertTrue(player.payloads.isEmpty)
@@ -121,6 +187,7 @@ final class TalkTranscriptCompletionTests: XCTestCase {
             manager.stop()
             await gateway.disconnect()
         } catch {
+            synthesizer.completeProgress()
             manager.setPushToTalkAudioOwnershipEndHandler(nil)
             manager.stop()
             await gateway.disconnect()
@@ -140,6 +207,18 @@ final class TalkTranscriptCompletionTests: XCTestCase {
             "payload": ["runId": runID, "sessionKey": "main", "state": "final", "message": text],
         ])
     }
+
+    private nonisolated static func progressEvent(
+        runID: String, stream: String, itemID: String, phase: String, text: String, sequence: Int) throws -> Data
+    {
+        try JSONSerialization.data(withJSONObject: [
+            "type": "event", "event": "agent", "seq": sequence,
+            "payload": [
+                "runId": runID, "seq": sequence, "stream": stream,
+                "data": ["kind": "preamble", "itemId": itemID, "phase": phase, "progressText": text],
+            ],
+        ])
+    }
 }
 
 private actor TranscriptRequestCapture {
@@ -157,10 +236,23 @@ private actor TranscriptRequestCapture {
 @MainActor
 private final class TranscriptSpeechSynthesizer: TalkGatewaySpeechSynthesizing {
     private(set) var texts: [String] = []
+    var onProgress: (() -> Void)?
+    private var progressContinuation: CheckedContinuation<Void, Never>?
 
     func synthesize(_ request: TalkGatewaySpeechRequest) async throws -> TalkGatewaySpeechAudio {
         self.texts.append(request.text)
+        if request.text == "Let me check.", let onProgress {
+            await withCheckedContinuation { continuation in
+                self.progressContinuation = continuation
+                onProgress()
+            }
+        }
         return TalkGatewaySpeechAudio(data: Data([1, 2, 3]), provider: "xiaomi", outputFormat: "mp3")
+    }
+
+    func completeProgress() {
+        self.progressContinuation?.resume()
+        self.progressContinuation = nil
     }
 }
 
