@@ -17,6 +17,10 @@ configuration.
 | Native Talk terminal-reply correlation              | Development customization                                                             | Only the exact caller-owned terminal assistant uses the caller run key; source attestation and other row identities remain unchanged         |
 | iOS automation-session visibility                   | Development customization                                                             | Persistent **Show automation sessions** filter in the sidebar and All Sessions, off by default; jobs and open conversations remain unchanged |
 
+Native iOS Talk uses the Gateway's execution deadline and waits for its own run
+to finish. Stopping Talk or changing the connection releases that wait. History
+read-back follows the canonical run ID.
+
 The render gate is a bounded reduction in unnecessary work, **not a claim that
 all physical-iPhone scrolling lag is resolved**. Relative timestamp updates
 remain owned by the footer's minute-cadence clock.

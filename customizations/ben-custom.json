@@ -27,7 +27,8 @@
     "iPhone continuous Talk listening cue at genuine transport readiness",
     "Caller-correlated owned Codex terminal replies for native Talk",
     "Persistent iOS automation-session visibility filter in the sidebar and All Sessions, hidden by default",
-    "iOS sidebar respects Active archive and snooze visibility for selected chats without recreating hidden placeholders"
+    "iOS sidebar respects Active archive and snooze visibility for selected chats without recreating hidden placeholders",
+    "Native iOS Talk inherits the Gateway execution deadline and reads back only its own run, including canonical history fallback"
   ],
   "inheritedFixes": [
     "Admitted internal WebChat source delivery is established at its producer"
