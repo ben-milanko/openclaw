@@ -68,6 +68,20 @@
       "preferencePersistence": "Enabled and disabled states survived relaunches; sidebar and All Sessions share one device-local preference",
       "nativeIndependentReview": "Claude Code scoped-clean through P2; Codex CLI unavailable due unsupported helper option",
       "inheritedNativeI18nFinding": "Same three missing translation IDs reproduced on the previous development head; no new missing strings"
+    },
+    "iosSidebarArchiveVisibility": {
+      "verifiedCodeCommit": "460c3d9b72f9a981c20e564f12204acc30a88246",
+      "nativeSourceSha256": "92dd27333d66107c645ed93e3712649a1da8576785f09c55fc7f7306eb6a5ad1",
+      "focusedIosTestsPassed": 67,
+      "focusedIosSuitesPassed": 2,
+      "parameterizedExecutionsPassed": 89,
+      "syntheticUiTestsPassed": 2,
+      "syntheticVisualInspection": "Selected/pinned archived chat visible in baseline; absent afterward with active chat retained. Both inspected screenshots delivered.",
+      "nativeIndependentReview": "Claude Code complete with one P2 display tradeoff declined against source; Opus SDK second review complete with no blocking finding. Not labeled scoped-clean.",
+      "signedDeviceBuild": "2026.10.3/build 3; deep strict signature and all four development bundle/profile checks passed",
+      "physicalInstallation": "Fresh device app listing verifies 2026.10.3/build 3",
+      "launch": "Blocked because physical phone was locked; unlock/launch requested",
+      "physicalSidebarInteraction": "Not independently observed; full synthetic before/after UI verified"
     }
   }
 }

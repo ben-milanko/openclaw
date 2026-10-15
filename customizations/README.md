@@ -95,6 +95,20 @@ therefore wait for that refresh before appearing in the sidebar; the conversatio
 itself stays open. This bounded tradeoff avoids maintaining a second archive-key
 cache or fetching the entire archive on every sidebar refresh.
 
+Archive-fix revision: `460c3d9b72f9a981c20e564f12204acc30a88246`.
+All 67 focused tests passed (89 executions), as did both synthetic before/after
+UI tests. Both screenshots were inspected and delivered. The complete native
+source hash is pinned in the inventory; screenshot fixtures were removed before
+signing. Opus second review found no blocking issue. The original AutoReview P2
+placeholder suggestion was checked against the source and declined as the display
+tradeoff described above, not relabeled scoped-clean.
+
+Development build 3 passed deep strict signature and all four bundle/profile
+checks. Installation and a fresh phone app listing confirm 2026.10.3/build 3.
+The phone was locked when launch was attempted, so launch and live connection
+readback remain pending unlock. Physical sidebar interaction is not independently
+observed. The Store app and live Gateway were not changed.
+
 The following verification covers the original chat and Talk integration.
 Verified code revision: `c9088c0e1da5fd3007970772196a7b7c71a47f03`.
 The native source manifest is pinned in the inventory. Verification passed:
