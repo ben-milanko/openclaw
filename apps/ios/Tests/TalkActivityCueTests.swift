@@ -44,7 +44,7 @@ struct TalkActivityCueTests {
         #expect(soundCues.currentCue == .thinking)
         manager._test_handleRealtimeRelayStatus("Speaking")
         #expect(soundCues.currentCue == nil)
-        manager._test_handleRealtimeRelayStatus("Listening")
+        manager._test_handleRealtimeRelayStatus("Listening (Realtime)")
         #expect(soundCues.currentCue == .listening)
         manager._test_handleRealtimeRelayStatus("Thinking")
         manager.updateGatewayConnected(false)
