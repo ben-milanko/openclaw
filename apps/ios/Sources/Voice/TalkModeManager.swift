@@ -201,7 +201,7 @@ final class TalkModeManager {
     private var audioSessionIsActive = false
 
     private let audioEngine = AVAudioEngine()
-    @ObservationIgnored private var listeningCuePlayer: AVAudioPlayer?
+    private let soundCues: any TalkSoundCuePlaying
     private var inputTapInstalled = false
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -296,7 +296,6 @@ final class TalkModeManager {
     @ObservationIgnored private var testPTTFinalizerHandler: (@MainActor () async -> Void)?
     @ObservationIgnored private var testPTTOnceStartedHandler: (@MainActor () async -> Void)?
     @ObservationIgnored private var testPTTReservedHandler: (@MainActor () async -> Void)?
-    @ObservationIgnored private var testListeningCueHandler: (@MainActor () -> Void)?
     @ObservationIgnored private var testRealtimeVoiceSessionCloseRequest:
         (@MainActor (_ method: String, _ paramsJSON: String?) async throws -> Void)?
     #endif
@@ -314,12 +313,21 @@ final class TalkModeManager {
     private func setStatus(
         _ text: String,
         phase: TalkPhase,
-        watchPresentation: TalkWatchPresentation = .phase)
+        watchPresentation: TalkWatchPresentation = .phase,
+        soundCue: TalkSoundCue? = nil)
     {
         let previousPhase = self.phase
         self.phase = phase
         self.watchPresentation = watchPresentation
         self.statusText = text
+        // Transcript processing releases captureMode while Live Talk remains enabled.
+        // Do not use captureMode to gate its thinking/generation sounds.
+        let activityCue = soundCue ?? (phase == .thinking ? .thinking : nil)
+        if self.isEnabled, let activityCue {
+            self.soundCues.play(activityCue, onFinished: nil)
+        } else if phase != .listening || previousPhase != .listening {
+            self.soundCues.stop()
+        }
         // Continuous Talk owns the ready cue; PTT/dictation and repeated idle status updates do not.
         if phase == .listening, previousPhase != .listening, self.isEnabled, self.captureMode == .continuous {
             self.playListeningCue()
@@ -327,31 +335,7 @@ final class TalkModeManager {
     }
 
     private func playListeningCue() {
-        #if DEBUG
-        if let testListeningCueHandler {
-            testListeningCueHandler()
-            return
-        }
-        #endif
-        do {
-            if self.listeningCuePlayer == nil {
-                guard let url = Bundle.main.url(
-                    forResource: "talk-listening", withExtension: "wav", subdirectory: "Audio")
-                else {
-                    self.logger.warning("listening cue missing from app bundle")
-                    return
-                }
-                self.listeningCuePlayer = try AVAudioPlayer(contentsOf: url)
-                self.listeningCuePlayer?.volume = 0.5
-            }
-            // Use Talk's existing speaker/headset route without reconfiguring microphone capture.
-            self.listeningCuePlayer?.currentTime = 0
-            if self.listeningCuePlayer?.play() != true {
-                self.logger.warning("listening cue playback could not start")
-            }
-        } catch {
-            self.logger.warning("listening cue failed: \(error.localizedDescription, privacy: .public)")
-        }
+        self.soundCues.play(.listening, onFinished: nil)
     }
 
     private static func shouldRestartRealtimeSession(
@@ -460,13 +444,15 @@ final class TalkModeManager {
     init(
         allowSimulatorCapture: Bool = false,
         gatewaySpeechSynthesizer: (any TalkGatewaySpeechSynthesizing)? = nil,
-        audioSessionDeactivationAction: (@MainActor () throws -> Void)? = nil)
+        audioSessionDeactivationAction: (@MainActor () throws -> Void)? = nil,
+        soundCues: (any TalkSoundCuePlaying)? = nil)
     {
         // The Gateway owns speech language; discard the retired app preference.
         UserDefaults.standard.removeObject(forKey: "talk.speechLocale")
         self.allowSimulatorCapture = allowSimulatorCapture
         self.gatewaySpeechSynthesizerOverride = gatewaySpeechSynthesizer
         self.audioSessionDeactivationAction = audioSessionDeactivationAction
+        self.soundCues = soundCues ?? TalkSoundCuePlayer()
         self.preferredInputDeviceID = UserDefaults.standard.string(
             forKey: Self.preferredInputDeviceIDKey)
     }
@@ -588,8 +574,8 @@ final class TalkModeManager {
     }
 
     func setEnabled(_ enabled: Bool) {
-        self.isEnabled = enabled
         if enabled {
+            self.isEnabled = true
             self.logger.info("enabled")
             GatewayDiagnostics.log("talk.timeline manager enabled")
             Task { await self.start() }
@@ -779,8 +765,9 @@ final class TalkModeManager {
     }
 
     func stop() {
+        let playStopCue = self.isEnabled && self.foregroundAudioCaptureAllowed && self.audioSessionIsActive
         self.isEnabled = false
-        self.listeningCuePlayer?.stop()
+        self.soundCues.stop()
         self.invalidateRealtimeVoiceSelection()
         self.cancelPendingStart()
         self.cancelFinishingPushToTalk()
@@ -816,6 +803,13 @@ final class TalkModeManager {
             self.finishActivePushToTalk(pendingCaptureId)
         }
         TalkSystemSpeechSynthesizer.shared.stop()
+        if playStopCue, self.soundCues.play(.stopped, onFinished: { [weak self] in
+            guard let self, !self.isEnabled else { return }
+            self.deactivateStandaloneAudioSessionIfIdle()
+        }) {
+            // Let the one-shot finish on the current route before releasing the session.
+            return
+        }
         deactivateAudioSession()
     }
 
@@ -825,6 +819,10 @@ final class TalkModeManager {
         let keepContinuousActive = keepActive && self.canKeepContinuousTalkActiveInBackground
         self.foregroundAudioCaptureAllowed = keepContinuousActive
         self.foregroundPushToTalkAllowed = false
+        if !keepContinuousActive {
+            self.soundCues.stop()
+            self.deactivateStandaloneAudioSessionIfIdle()
+        }
         guard self.isEnabled || self.activePTTCaptureId != nil || self.finishingPushToTalk != nil else { return }
         if keepContinuousActive {
             if self.isListening {
@@ -842,7 +840,7 @@ final class TalkModeManager {
             String(localized: "Paused"),
             phase: .idle,
             watchPresentation: .localized("Paused"))
-        self.listeningCuePlayer?.stop()
+        self.soundCues.stop()
         self.lastTranscript = ""
         self.lastHeard = nil
         self.silenceTask?.cancel()
@@ -2265,7 +2263,7 @@ final class TalkModeManager {
                 self.isSpeaking = speaking
                 if speaking {
                     self.isListening = false
-                    self.phase = .speaking
+                    self.setStatus(String(localized: "Speaking…"), phase: .speaking)
                 }
             },
             onInputLevel: { [weak self] level in
@@ -2871,11 +2869,12 @@ final class TalkModeManager {
         self.speechGeneration += 1
         let speechGeneration = self.speechGeneration
 
-        self.setStatus(String(localized: "Generating voice…"), phase: .speaking)
+        self.setStatus(String(localized: "Generating voice…"), phase: .speaking, soundCue: .generatingVoice)
         self.isSpeaking = true
         self.lastSpokenText = cleaned
         defer {
             if self.speechGeneration == speechGeneration {
+                self.soundCues.stop()
                 self.stopRecognition()
                 self.isSpeaking = false
                 self.playbackLevel = nil
@@ -2934,6 +2933,9 @@ final class TalkModeManager {
             try await self.playGatewayTalkSpeak(
                 text: text, directive: directive, generation: generation, context: context)
         } catch is CancellationError {
+            if self.isCurrentSpeechGeneration(generation) {
+                self.soundCues.stop()
+            }
             return
         } catch {
             guard self.isCurrentSpeechGeneration(generation) else { return }
@@ -3094,6 +3096,7 @@ final class TalkModeManager {
     }
 
     private func stopSpeaking(storeInterruption: Bool = true) {
+        self.soundCues.stop()
         self.speechGeneration += 1
         guard self.isSpeechOutputActive else { return }
         if self.isSpeaking {
@@ -3197,6 +3200,9 @@ final class TalkModeManager {
                     self.isSpeaking = false
                     self.stopRecognition()
                     self.incrementalSpeechTask = nil
+                    if self.isEnabled, self.incrementalSpeechActive {
+                        self.setStatus(String(localized: "Thinking…"), phase: .thinking)
+                    }
                 }
             }
             while !Task.isCancelled {
@@ -3208,7 +3214,7 @@ final class TalkModeManager {
                 if let gatewayContext = self.incrementalGatewayContext {
                     let parsed = TalkDirectiveParser.parse(segment)
                     self.applyDirective(parsed.directive)
-                    self.setStatus(String(localized: "Generating voice…"), phase: .speaking)
+                    self.setStatus(String(localized: "Generating voice…"), phase: .speaking, soundCue: .generatingVoice)
                     await self.playGatewayAssistant(
                         text: parsed.stripped,
                         directive: parsed.directive,
@@ -4083,6 +4089,7 @@ extension TalkModeManager {
     }
 
     private func deactivateAudioSession() {
+        self.soundCues.stop()
         guard self.audioSessionIsActive else { return }
         do {
             if let audioSessionDeactivationAction {
@@ -4304,10 +4311,6 @@ extension TalkModeManager {
         self.realtimeSession = session
         self.realtimeSession(session, didChangeStatus: "Connecting")
         return session
-    }
-
-    func _test_setListeningCueHandler(_ handler: (@MainActor () -> Void)?) {
-        self.testListeningCueHandler = handler
     }
 
     func _test_preparePrefetchedRealtimeVoiceSession(

@@ -10,6 +10,8 @@ OpenClaw iOS is the officially released iPhone app. It connects to an OpenClaw G
 
 ## Support Notes
 
+- Live Talk plays a repeating two-note thinking cue and a faster three-note cue during the “Generating voice…” phase. Both stop before speech playback or listening resumes. Stopping Live Talk plays a short descending chime before releasing its audio session. Dictation and standalone push-to-talk remain silent. Physical-device volume and microphone echo behavior still need validation.
+
 - UI and onboarding changes ship through normal app releases.
 - Upgrade migrations support data written by releases shipped on or after July 1, 2026. Earlier UserDefaults gateway locations are no longer imported; reconnect from Gateway settings if needed. Push registrations without a relay profile are refreshed through normal registration.
 - Connections use the current `openclaw-ios` client identity without pre-rename retries or undocumented legacy client-ID overrides. Talk credentials come from the Gateway's configuration; local provider keys whose writer retired before July are no longer read.
