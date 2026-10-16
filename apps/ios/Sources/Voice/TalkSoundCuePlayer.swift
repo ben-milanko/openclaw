@@ -33,7 +33,7 @@ enum TalkSoundCue: Hashable {
         let sampleCount = Int(duration * Double(sampleRate))
         let byteCount = UInt32(sampleCount * 2)
         var data = Data("RIFF".utf8)
-        func append<T: FixedWidthInteger>(_ value: T) {
+        func append(_ value: some FixedWidthInteger) {
             var littleEndian = value.littleEndian
             withUnsafeBytes(of: &littleEndian) { data.append(contentsOf: $0) }
         }

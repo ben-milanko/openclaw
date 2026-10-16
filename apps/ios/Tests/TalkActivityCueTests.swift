@@ -64,7 +64,7 @@ struct TalkActivityCueTests {
         #expect(soundCues.played.isEmpty)
     }
 
-    @Test func `stop cue finishes before audio session release and stop is idempotent`() async throws {
+    @Test func `stop cue finishes before audio session release and stop is idempotent`() async {
         let soundCues = RecordingTalkSoundCues()
         var deactivations = 0
         let manager = TalkModeManager(
@@ -84,7 +84,7 @@ struct TalkActivityCueTests {
         #expect(soundCues.played.filter { $0 == .stopped }.count == 1)
     }
 
-    @Test func `failed stop sound releases audio immediately`() async throws {
+    @Test func `failed stop sound releases audio immediately`() async {
         let soundCues = RecordingTalkSoundCues()
         var deactivations = 0
         let manager = TalkModeManager(
@@ -161,7 +161,9 @@ private final class CueCheckingSpeechPlayer: TalkBufferedAudioPlaying {
     let soundCues: RecordingTalkSoundCues
     var played = false
 
-    init(soundCues: RecordingTalkSoundCues) { self.soundCues = soundCues }
+    init(soundCues: RecordingTalkSoundCues) {
+        self.soundCues = soundCues
+    }
 
     func play(data _: Data) async -> StreamingPlaybackResult {
         #expect(self.soundCues.currentCue == nil)
@@ -169,5 +171,7 @@ private final class CueCheckingSpeechPlayer: TalkBufferedAudioPlaying {
         return StreamingPlaybackResult(finished: true, interruptedAt: nil)
     }
 
-    func stop() -> Double? { nil }
+    func stop() -> Double? {
+        nil
+    }
 }

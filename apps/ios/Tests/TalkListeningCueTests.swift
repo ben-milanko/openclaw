@@ -98,7 +98,9 @@ final class RecordingTalkSoundCues: TalkSoundCuePlaying {
     var onFinished: (@MainActor () -> Void)?
     var playbackSucceeds = true
 
-    var listeningCount: Int { self.played.filter { $0 == .listening }.count }
+    var listeningCount: Int {
+        self.played.filter { $0 == .listening }.count
+    }
 
     @discardableResult
     func play(_ cue: TalkSoundCue, onFinished: (@MainActor () -> Void)?) -> Bool {
