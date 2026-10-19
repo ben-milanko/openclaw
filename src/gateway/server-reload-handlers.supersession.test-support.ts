@@ -1,8 +1,10 @@
 import { describe, expect, it, vi, type Mock } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../test/helpers/promise.js";
+import { createTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { PreparedModelRuntimePublicationSupersededError } from "../agents/prepared-model-runtime.errors.js";
 import type { RuntimeConfigWriteApplicationStatus } from "../config/runtime-write-application.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { observeOwnedDirectory } from "../infra/owned-directory-observation.js";
 import { activateSecretsRuntimeSnapshot } from "../secrets/runtime.js";
 import { buildGatewayReloadPlan } from "./config-reload-plan.js";
 import { createConfigReloadTestClock } from "./config-reload.test-support.js";
@@ -248,7 +250,7 @@ export function registerGatewaySupersededReloadTests({
             publish: async (commit) => await commit(),
           },
         );
-        await vi.runAllTimersAsync();
+        await vi.advanceTimersByTimeAsync(0);
 
         expect(prepareRuntimeConfig).toHaveBeenCalledOnce();
         expect(requestRecoveryRestart).toHaveBeenCalledWith(
@@ -262,6 +264,12 @@ export function registerGatewaySupersededReloadTests({
 
     it("pauses stale-target recovery until a newer valid config is accepted", async () => {
       vi.useFakeTimers();
+      // A retained process observer must not make this immediate restart flow drain forever.
+      const tempDirs = createTempDirTracker();
+      const observation = observeOwnedDirectory(
+        tempDirs.make("reload-retained-observation-"),
+        () => {},
+      );
       const requestRecoveryRestart = vi.fn(() => ({ status: "emitted" as const }));
       const handlers = createGatewayReloadHandlers({ requestRecoveryRestart });
       const configA = { logging: { level: "info" as const } } satisfies OpenClawConfig;
@@ -301,7 +309,7 @@ export function registerGatewaySupersededReloadTests({
         expect(acceptedBeforeTailFailure.debt).toBeUndefined();
         rejectTail?.(new Error("stale A tail failed"));
         await staleTail;
-        await vi.runAllTimersAsync();
+        await vi.advanceTimersByTimeAsync(0);
 
         expect(requestRecoveryRestart).not.toHaveBeenCalled();
         expect(prepareA).not.toHaveBeenCalled();
@@ -321,12 +329,14 @@ export function registerGatewaySupersededReloadTests({
           prepareRuntimeConfig: prepareC,
         });
         restart.settle("committed");
-        await vi.runAllTimersAsync();
+        await vi.advanceTimersByTimeAsync(0);
 
         expect(requestRecoveryRestart).toHaveBeenCalledOnce();
         expect(prepareC).toHaveBeenCalledOnce();
       } finally {
         handlers.stopRestartRetries();
+        observation.close();
+        tempDirs.cleanup();
       }
     });
 
