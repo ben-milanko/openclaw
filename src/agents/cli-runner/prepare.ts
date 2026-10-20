@@ -1519,6 +1519,12 @@ async function prepareCliRunContextWithinReadFence(
         : buildHarnessVisibleReplyGuidance({
             sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
             messageToolAvailable,
+            sourceReplyContext: {
+              provider: runtimeChannel,
+              sessionKey: params.sessionKey,
+              sessionId: params.sessionId,
+              mainKey: params.config?.session?.mainKey,
+            },
             requireExplicitMessageTarget,
           });
     const finalizedTranscriptPrompt =

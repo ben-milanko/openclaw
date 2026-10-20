@@ -7,7 +7,6 @@ import type {
   PackageActivationOptions,
   PackageUpdateTransaction,
 } from "../../infra/package-update-swap-contract.js";
-import { PackageUpdateActivationError } from "../../infra/package-update-swap-contract.js";
 import {
   deferPackageStateVerification,
   failedPackageVerificationStep,
@@ -73,6 +72,10 @@ import {
 import { recordUpdateDatabaseWrites } from "./update-command-database-receipts.js";
 import { withUpdateDoctorChild } from "./update-command-doctor-child.js";
 import { readPackageUpdateIdentity } from "./update-command-package-identity.js";
+import {
+  createPackageUpdateTargetVerifier,
+  runPackageUpdateCandidateVerifier,
+} from "./update-command-package-target.js";
 import { resolveUpdateTargetEnv } from "./update-command-service-env.js";
 
 type PackageDoctorContext = {
@@ -485,6 +488,7 @@ export type PackageInstallUpdateParams = Omit<PackageDoctorOptions, "results"> &
   installKind: "git" | "package" | "unknown";
   tag: string;
   installSpec?: string;
+  packageTarget?: import("../../../packages/gateway-protocol/src/schema/config.js").PackageUpdateTarget;
   timeoutMs: number;
   startedAt: number;
   honorPackageRoot?: boolean;
@@ -536,11 +540,7 @@ export async function stagePackageInstallUpdate(
       beforeVerifyCandidate:
         params.pauseBeforeVerification || params.beforeVerifyCandidate
           ? async (root) => {
-              try {
-                await params.beforeVerifyCandidate?.(root);
-              } catch (error) {
-                throw new PackageUpdateActivationError(error);
-              }
+              await runPackageUpdateCandidateVerifier(root, params.beforeVerifyCandidate);
               if (params.pauseBeforeVerification) {
                 await retainCandidate(root);
               }
@@ -659,7 +659,7 @@ export async function runPackageInstallUpdate(
       }),
     },
     validateCandidate: params.validateCandidate,
-    beforeVerifyCandidate: params.beforeVerifyCandidate,
+    beforeVerifyCandidate: createPackageUpdateTargetVerifier(params),
     resolveLifecycleNodeRunner: params.resolveLifecycleNodeRunner ?? (() => params.nodeRunner),
     beforeActivate: params.beforeActivate,
     assertCurrent: params.assertCurrent,

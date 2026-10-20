@@ -242,6 +242,25 @@ export const UpdateHoldResultSchema = closedObject({
   schedule: Type.Optional(UpdateScheduleStateSchema),
 });
 
+/** One reviewed local artifact; version alone cannot identify a custom build. */
+export const PackageUpdateTargetSchema = closedObject({
+  kind: Type.Literal("package"),
+  path: Type.String({
+    minLength: 1,
+    maxLength: 4096,
+    pattern:
+      "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f-\\u009f])(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\).+\\.(?:tgz|tar\\.gz)$",
+    description: "Absolute local path to the reviewed .tgz or .tar.gz package.",
+  }),
+  version: Type.String({
+    maxLength: 256,
+    pattern:
+      "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$(?![\\s\\S])",
+  }),
+  buildId: Type.String({ minLength: 1, maxLength: 96, pattern: "^\\S+(?![\\s\\S])" }),
+  sha256: Type.String({ minLength: 64, maxLength: 64, pattern: "^[a-f0-9]{64}$" }),
+});
+
 /** Request payload for running an update/restart flow with optional channel delivery context. */
 export const UpdateRunParamsSchema = closedObject({
   requester: Type.Optional(
@@ -258,14 +277,17 @@ export const UpdateRunParamsSchema = closedObject({
   restartDelayMs: Type.Optional(Type.Integer({ minimum: 0 })),
   timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
   target: Type.Optional(
-    closedObject({
-      kind: Type.Literal("git"),
-      upstreamRef: Type.String({
-        minLength: 1,
-        pattern: "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+    Type.Union([
+      closedObject({
+        kind: Type.Literal("git"),
+        upstreamRef: Type.String({
+          minLength: 1,
+          pattern: "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+        }),
+        upstreamSha: Type.String({ pattern: "^[a-fA-F0-9]{40}$" }),
       }),
-      upstreamSha: Type.String({ pattern: "^[a-fA-F0-9]{40}$" }),
-    }),
+      PackageUpdateTargetSchema,
+    ]),
   ),
 });
 
@@ -394,5 +416,6 @@ export type UpdateStatusResult = Static<typeof UpdateStatusResultSchema>;
 export type UpdateHoldParams = Static<typeof UpdateHoldParamsSchema>;
 export type UpdateHoldResult = Static<typeof UpdateHoldResultSchema>;
 export type UpdateRunParams = Static<typeof UpdateRunParamsSchema>;
+export type PackageUpdateTarget = Static<typeof PackageUpdateTargetSchema>;
 export type UpdateReportParams = Static<typeof UpdateReportParamsSchema>;
 export type UpdateReportResult = Static<typeof UpdateReportResultSchema>;

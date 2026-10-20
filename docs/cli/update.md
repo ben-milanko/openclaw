@@ -547,6 +547,44 @@ This handoff works only when the installed updater already supports it. An older
 updater that refuses before staging cannot use a newer candidate's judgment;
 follow the recovery guidance for that installed release first.
 
+## Reviewed local package updates
+
+Use `--package-target <json>` to select a reviewed local archive by its exact
+version, build ID, and SHA-256. The path must be absolute and end in `.tgz` or
+`.tar.gz`. For example, replace the example identities with those from your
+verified package:
+
+```sh
+openclaw update --package-target '{"kind":"package","path":"/absolute/path/openclaw.tgz","version":"2026.10.5","buildId":"reviewed-build","sha256":"<64-lowercase-hex-characters>"}'
+```
+
+The updater copies and hashes the archive in a private workspace before using
+it. The package manager installs from that copy, not from a moving registry tag
+or an `OPENCLAW_UPDATE_PACKAGE_SPEC` override. It checks the archive's package
+name (`openclaw`), version, and build ID before invoking the package manager,
+then checks the staged identity again before candidate admission or an
+already-current decision. Hash or identity mismatches leave the live
+installation unchanged.
+
+This uses the normal managed update, migration, recovery, and restart flow. It
+does not change the saved channel or switch the installation method. Git and
+adopted immutable installations do not accept package targets; extended-stable
+retains its verified registry-target requirement. Do not combine this option
+with `--tag`, `--sha`, `--channel`, or `--reapply-local-overrides`. A dry run
+validates the request shape without copying or verifying the archive.
+
+The Gateway `update.run` RPC and `gateway` tool accept the same object as
+`target`, alongside their existing request fields. Owner and operator-schedule
+authorization remains required. An announced automatic-update campaign is
+rejected rather than adopted for an exact package request: a campaign's version
+alone cannot establish the reviewed archive's identity. The campaign is left
+intact. The detached updater receives the complete target and verifies it again
+before using the package.
+
+An older installed Gateway cannot expose this capability from a candidate
+archive. Its first upgrade still uses the installed release's documented
+operator update route; subsequent managed calls can select an exact package.
+
 ## Automation and SSH
 
 For an authorized update on another host, use the target installation's owning

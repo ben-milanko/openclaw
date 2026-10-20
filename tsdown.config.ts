@@ -463,6 +463,9 @@ function buildCoreDistEntries(): Record<string, string> {
     "commands/doctor-update-schema-guard": "src/commands/doctor-update-schema-guard.ts",
     "crabbox-wrapper": "scripts/crabbox-wrapper.mts",
     "docker-healthcheck": "src/docker-healthcheck.ts",
+    // Keep the exact .mjs path used by independently installed Codex audio repairs.
+    // New harnesses use the SDK; remove after repaired external versions have migrated.
+    "bound-main-webchat-source-reply-repair": "src/auto-reply/bound-main-webchat-source-reply.ts",
     // Ensure this module is bundled as an entry so legacy CLI shims can resolve its exports.
     "cli/daemon-cli": "src/cli/daemon-cli.ts",
     // Keep recorded post-swap imports of this binding out of the shared updater graph.
@@ -865,7 +868,11 @@ const configs: UserConfig[] = [
       },
       // Explicit ESM chunks avoid repeated package-format parsing in Node;
       // named entrypoints retain their public .js paths.
-      outputOptions: { chunkFileNames: "[name]-[hash].mjs" },
+      outputOptions: {
+        entryFileNames: (chunk) =>
+          chunk.name === "bound-main-webchat-source-reply-repair" ? "[name].mjs" : "[name].js",
+        chunkFileNames: "[name]-[hash].mjs",
+      },
       plugins: [
         createStateSchemaInlinePlugin(),
         createGatewayRunChunkMetadataPlugin(),

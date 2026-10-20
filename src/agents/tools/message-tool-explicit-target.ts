@@ -1,6 +1,11 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import {
+  canUseBoundMainWebChatSourceReply,
+  isUnroutedSourceReplySend,
+} from "../../auto-reply/bound-main-webchat-source-reply.js";
 import type { PreparedMessageToolCatalog } from "../../channels/plugins/message-action-discovery.js";
 import type { ChannelMessageActionName } from "../../channels/plugins/types.public.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { MessageActionDeniedError } from "../../infra/outbound/message-action-denial.js";
 import {
   actionRequiresTarget,
@@ -11,6 +16,7 @@ import { asToolParamsRecord, type AnyAgentTool, readToolStringParam } from "./co
 import { createMessageToolDecisionRecorder } from "./message-tool-decision.js";
 
 type ExplicitMessageTargetContext = {
+  allowBoundMainWebChatSourceReply?: boolean;
   currentChannelProvider?: string;
   preparedMessageToolCatalog?: PreparedMessageToolCatalog;
 };
@@ -26,6 +32,9 @@ function requireExplicitMessageTarget(
   action: ChannelMessageActionName,
   context: ExplicitMessageTargetContext,
 ): void {
+  if (isUnroutedSourceReplySend(params, action, context.allowBoundMainWebChatSourceReply)) {
+    return;
+  }
   if (action !== "broadcast" && !actionRequiresTarget(action)) {
     return;
   }
@@ -60,13 +69,32 @@ function requireExplicitMessageTarget(
 }
 
 export function createMessageToolExplicitTargetGuard(params: {
+  sourceReplyOptions?: {
+    requireExplicitTarget?: boolean;
+    agentSessionKey?: string;
+    sessionId?: string;
+    config?: Pick<OpenClawConfig, "session">;
+  };
   currentChannelProvider?: string;
   preparedMessageToolCatalog?: PreparedMessageToolCatalog;
   decisionChannel?: string;
-}): ExplicitMessageTargetGuard {
+}): ExplicitMessageTargetGuard | undefined {
+  if (!params.sourceReplyOptions?.requireExplicitTarget) {
+    return undefined;
+  }
+  const context: ExplicitMessageTargetContext = {
+    currentChannelProvider: params.currentChannelProvider,
+    preparedMessageToolCatalog: params.preparedMessageToolCatalog,
+    allowBoundMainWebChatSourceReply: canUseBoundMainWebChatSourceReply({
+      provider: params.currentChannelProvider,
+      sessionKey: params.sourceReplyOptions?.agentSessionKey,
+      sessionId: params.sourceReplyOptions?.sessionId,
+      mainKey: params.sourceReplyOptions?.config?.session?.mainKey,
+    }),
+  };
   const toolCallIds = new WeakMap<object, string>();
   const requireTarget = (actionParams: Record<string, unknown>, action: ChannelMessageActionName) =>
-    requireExplicitMessageTarget(actionParams, action, params);
+    requireExplicitMessageTarget(actionParams, action, context);
 
   return {
     prepareBeforeToolCallParams(rawParams, hookContext) {

@@ -1,4 +1,5 @@
 import { appendCronStyleCurrentTimeLine } from "../agents/current-time.js";
+import { mainWebChatHeartbeatContext } from "../auto-reply/bound-main-webchat-source-reply.js";
 import type { InternalGetReplyOptions } from "../auto-reply/reply/get-reply.types.js";
 import { prepareReplyConversation } from "../auto-reply/reply/prompt-session-context.js";
 import {
@@ -124,6 +125,7 @@ export async function runHeartbeatOnce(opts: HeartbeatRunOptions): Promise<Heart
     await typing?.onReplyStart();
     signal?.throwIfAborted();
     const heartbeatContext = {
+      ...mainWebChatHeartbeatContext({ cfg, prepared, suppressOriginatingContext, runSessionKey }),
       Body: appendCronStyleCurrentTimeLine(prepared.prompt, cfg, startedAt),
       From: sender,
       To: !suppressOriginatingContext ? delivery.to : undefined,

@@ -647,6 +647,54 @@ describe("agent runtime identity token", () => {
     },
   );
 
+  it.each(["signed", "direct"] as const)(
+    "retains a %s remote requester identity only while its creator is live",
+    async (mode) => {
+      useTempHome();
+      const runtimeToken = await importRuntimeTokenModule();
+      const grants = await import("./cron-creator-authority-grant.js");
+      const run = operationalRun("remote-requester");
+      const scope = grants.createCronCreatorAuthorityRunScope(
+        run.operationalRunInstance.runId,
+        { kind: "unknown" },
+        { source: "control-ui-admin" },
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+      try {
+        const grant = grants.mintCronCreatorAuthorityGrant(
+          scope,
+          undefined,
+          undefined,
+          undefined,
+          "requester",
+        );
+        const params = {
+          agentId: "main",
+          sessionKey: "agent:main:control-ui",
+          operationalRunInstance: run.operationalRunInstance,
+          cronCreatorAuthorityGrant: grant,
+          cronExecToolTarget: { host: "gateway" as const, ask: "always" as const },
+        };
+        const identity = await createIdentity(runtimeToken, mode, params);
+        expect(identity).toMatchObject({ cronCreatorAuthorityGrant: grant });
+        expect(identity).not.toHaveProperty("cronToolsAllowCapture");
+        expect(identity).toMatchObject({ cronExecToolTarget: { host: "gateway", ask: "always" } });
+        expect(() => grants.mintCronCreatorAuthorityGrant(scope)).toThrow(
+          "Automation creation is not granted",
+        );
+        grants.revokeCronCreatorAuthorityRunScope(scope);
+        await expect(createIdentity(runtimeToken, mode, params)).rejects.toThrow(
+          "require tool-surface or authenticated-requester provenance",
+        );
+      } finally {
+        grants.revokeCronCreatorAuthorityRunScope(scope);
+      }
+    },
+  );
+
   it("does not mint local credentials while rejecting invalid presented tokens", async () => {
     const runtimeToken = await importRuntimeTokenModule();
 

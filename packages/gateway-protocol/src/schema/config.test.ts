@@ -148,6 +148,49 @@ describe("update protocol schemas", () => {
     }
   });
 
+  it("requires a complete exact local package identity for update.run", () => {
+    const target = {
+      kind: "package",
+      path: "/reviewed builds/openclaw.tgz",
+      version: "2026.10.5-beta.1+custom",
+      buildId: "reviewed-custom-build",
+      sha256: "a".repeat(64),
+    };
+    for (const archivePath of [
+      target.path,
+      "/reviewed/openclaw.tar.gz",
+      "C:\\reviewed\\openclaw.tgz",
+      "\\\\server\\reviewed\\openclaw.tgz",
+    ]) {
+      expect(Value.Check(UpdateRunParamsSchema, { target: { ...target, path: archivePath } })).toBe(
+        true,
+      );
+    }
+    for (const invalidTarget of [
+      { ...target, path: "relative.tgz" },
+      { ...target, path: "https://example.com/openclaw.tgz" },
+      { ...target, path: "/reviewed/source-directory" },
+      { ...target, path: "/reviewed/openclaw\u0000.tgz" },
+      { ...target, path: "/reviewed/openclaw.tgz\n" },
+      { ...target, version: "latest" },
+      { ...target, version: "^2026.10.5" },
+      { ...target, version: "2026.10.5-beta.01" },
+      { ...target, version: "v2026.10.5" },
+      { ...target, version: "2026.10.5\n" },
+      { ...target, buildId: "" },
+      { ...target, buildId: " ".repeat(3) },
+      { ...target, buildId: "build\n" },
+      { ...target, buildId: "a".repeat(97) },
+      { ...target, sha256: "a".repeat(63) },
+      { ...target, sha256: "A".repeat(64) },
+      { ...target, sha256: "a".repeat(64) + "\n" },
+      { ...target, sha256: undefined },
+      { ...target, extra: true },
+    ]) {
+      expect(Value.Check(UpdateRunParamsSchema, { target: invalidTarget })).toBe(false);
+    }
+  });
+
   it("accepts an optional explicit checkout refresh", () => {
     expect(Value.Check(UpdateStatusParamsSchema, {})).toBe(true);
     expect(Value.Check(UpdateStatusParamsSchema, { refreshCheckout: true })).toBe(true);

@@ -1,5 +1,12 @@
 /** Visible-reply ownership and presentation guidance shared with agent harnesses. */
 import { buildUiPresentationPrompt } from "../agents/ui-presentation-prompt.js";
+import { getPluginRuntimeExecutionFrame } from "../plugins/runtime/execution-frame.js";
+import { canUseBoundMainWebChatSourceReply } from "./bound-main-webchat-source-reply.js";
+
+function canUseScopedBoundMainWebChatSourceReply(): boolean {
+  const context = getPluginRuntimeExecutionFrame()?.gatewayScope?.readSourceReplyContext?.();
+  return context ? canUseBoundMainWebChatSourceReply(context) : false;
+}
 
 /**
  * True when the visible source reply must flow through the message tool, either
@@ -15,7 +22,13 @@ export function messageToolOwnsVisibleReply(params: {
   return params.forceMessageTool === true || params.sourceReplyDeliveryMode === "message_tool_only";
 }
 
-export function buildMessageToolTargetGuidance(requireExplicitMessageTarget: boolean): string {
+export function buildMessageToolTargetGuidance(
+  requireExplicitMessageTarget: boolean,
+  allowBoundMainWebChatSourceReply = canUseScopedBoundMainWebChatSourceReply(),
+): string {
+  if (requireExplicitMessageTarget && allowBoundMainWebChatSourceReply) {
+    return "`send`: `message`; for this bound main WebChat conversation only, omit channel/target and all route overrides to use its private source-reply sink. Other destinations and actions still require an explicit target. Never guess a recipient.";
+  }
   return requireExplicitMessageTarget
     ? "`send`: `target` + `message`; target required this turn."
     : "`send`: `message`; current source is default target. Set `target` only elsewhere.";
@@ -25,6 +38,8 @@ export function buildHarnessVisibleReplyGuidance(params: {
   sourceReplyDeliveryMode?: string;
   messageToolAvailable: boolean;
   requireExplicitMessageTarget?: boolean;
+  allowBoundMainWebChatSourceReply?: boolean;
+  sourceReplyContext?: Parameters<typeof canUseBoundMainWebChatSourceReply>[0];
   uiPresentation?: Parameters<typeof buildUiPresentationPrompt>[0];
 }): string {
   const deliveryGuidance = messageToolOwnsVisibleReply(params)
@@ -36,7 +51,13 @@ export function buildHarnessVisibleReplyGuidance(params: {
       : "For the current source conversation, reply normally in your final assistant message; OpenClaw will deliver it through the active source conversation.";
   const targetGuidance =
     params.messageToolAvailable && params.requireExplicitMessageTarget !== undefined
-      ? buildMessageToolTargetGuidance(params.requireExplicitMessageTarget)
+      ? buildMessageToolTargetGuidance(
+          params.requireExplicitMessageTarget,
+          params.allowBoundMainWebChatSourceReply ??
+            (params.sourceReplyContext
+              ? canUseBoundMainWebChatSourceReply(params.sourceReplyContext)
+              : canUseScopedBoundMainWebChatSourceReply()),
+        )
       : undefined;
   const pendingReplyGuidance = params.messageToolAvailable
     ? "Commentary is optional progress and may be hidden. Answer user questions or status requests received during ongoing work with `message(action=send, final=false)`, then continue the task. Before finishing, deliver every still-pending answer through this turn's visible-reply route. Do not repeat answers already delivered."

@@ -275,6 +275,23 @@ personal-overlay refresh, turn-scoped project or memory guidance, native forks,
 or Gateway-to-hosted-workspace path projection. Those remain MVP integration gaps;
 shared preparation does not enable those operations.
 
+## Source-reply guidance
+
+Harnesses use `buildHarnessVisibleReplyGuidance` from
+`openclaw/plugin-sdk/agent-harness-runtime` for the current turn's delivery policy.
+Pass `sourceReplyContext` with the host-prepared `provider`, `sessionKey`,
+`sessionId`, and configured `mainKey` so strict-target turns can describe the
+private source-reply sink for a bound main WebChat conversation. The shared owner
+checks that identity; plugins should not infer the exception or import private
+host build files. The guidance does not grant delivery authority. Other
+destinations and actions still require explicit targets under strict policy.
+
+Existing harness versions that call the helper without `sourceReplyContext` use
+the host's captured source facts inside their current execution scope. This
+fallback is descriptive only, honors an explicit caller context, and stops
+advertising the private sink when the host closes or its admitted authority is
+revoked. Nested and concurrent harness attempts retain their own source facts.
+
 ## Tool failure diagnostics
 
 Agent harnesses can import `readToolOperatorHint(error)` from

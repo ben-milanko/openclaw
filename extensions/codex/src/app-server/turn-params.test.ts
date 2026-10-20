@@ -213,6 +213,37 @@ describe("buildTurnStartParams native history provenance", () => {
 });
 
 describe("buildTurnStartParams source-delivery context", () => {
+  it.each([
+    { provider: "webchat", sessionKey: "agent:main:main", allowed: true },
+    { provider: "webchat", sessionKey: "agent:main:home", mainKey: "home", allowed: true },
+    { provider: "webchat", sessionKey: "agent:main:subagent:child", allowed: false },
+    { provider: "telegram", sessionKey: "agent:main:main", allowed: false },
+  ])("scopes strict source guidance to $provider/$sessionKey", (testCase) => {
+    const params = createParams("/tmp/session.jsonl", "/repo", {
+      session: { mainKey: testCase.mainKey },
+    });
+    params.messageChannel = testCase.provider;
+    params.sessionKey = testCase.sessionKey;
+    params.sourceReplyDeliveryMode = "message_tool_only";
+    const turn = buildTurnStartParams(params, {
+      threadId: "thread-1",
+      cwd: "/repo",
+      appServer: createAppServerOptions(),
+      messageToolAvailable: true,
+      requireExplicitMessageTarget: true,
+      preserveNativeTurnSettings: true,
+    });
+    const guidance = turn.additionalContext?.openclaw_source_delivery?.value;
+    if (testCase.allowed) {
+      expect(guidance).toContain("bound main WebChat conversation only, omit channel/target");
+      expect(guidance).toContain("Other destinations and actions still require an explicit target");
+    } else {
+      expect(guidance).toContain("target required this turn");
+      expect(guidance).not.toContain("omit channel/target");
+    }
+    expect(turn.input).toEqual([{ type: "text", text: params.prompt, text_elements: [] }]);
+  });
+
   it("carries explicit current policy without changing native turn input", () => {
     const params = createParams("/tmp/session.jsonl", "/repo");
     params.prompt = "unchanged current request";

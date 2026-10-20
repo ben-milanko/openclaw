@@ -1794,6 +1794,44 @@ describe("message tool agent routing", () => {
 });
 
 describe("message tool explicit target guard", () => {
+  it.each([
+    { name: "canonical main", sessionKey: "agent:main:main", allowed: true },
+    { name: "custom main", sessionKey: "agent:main:home", mainKey: "home", allowed: true },
+    { name: "subagent", sessionKey: "agent:main:subagent:child", allowed: false },
+    { name: "detached cron", sessionKey: "agent:main:cron:job", allowed: false },
+    { name: "dashboard", sessionKey: "agent:main:dashboard:chat", allowed: false },
+    { name: "external route", sessionKey: "agent:main:whatsapp:direct:person", allowed: false },
+  ])("prepares the narrow source exception for $name", ({ sessionKey, mainKey, allowed }) => {
+    const tool = createMessageTool({
+      config: mainKey ? { session: { mainKey } } : {},
+      preparedMessageToolCatalog: EMPTY_PREPARED_MESSAGE_TOOL_CATALOG,
+      requireExplicitTarget: true,
+      agentSessionKey: sessionKey,
+      sessionId: "source-session",
+      currentChannelProvider: "webchat",
+    });
+    const finalize = tool.finalizeBeforeToolCallParams;
+    if (!finalize) {
+      throw new Error("Expected the real explicit-target tool boundary");
+    }
+    const args = { action: "send", media: "/tmp/proof.mp3", message: "audio proof" };
+    if (allowed) {
+      expect(finalize(args, args)).toBe(args);
+      for (const override of [
+        { channel: "webchat" },
+        { threadId: "other" },
+        { gatewayUrl: "https://example.invalid" },
+      ]) {
+        const routed = { ...args, ...override };
+        expect(() => finalize(routed, routed)).toThrow(/Explicit message target required/);
+      }
+      const explicit = { ...args, channel: "whatsapp", target: "+10000000000" };
+      expect(finalize(explicit, explicit)).toBe(explicit);
+    } else {
+      expect(() => finalize(args, args)).toThrow(/Explicit message target required/);
+    }
+  });
+
   it("records separate redacted denials when every broadcast target is invalid", async () => {
     const receipts: DecisionReceiptV1[] = [];
     const clearSink = configureMessageActionDecisionSink((receipt) => {

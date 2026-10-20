@@ -136,6 +136,12 @@ export function buildTurnStartParams(
           sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
           messageToolAvailable: options.messageToolAvailable === true,
           requireExplicitMessageTarget: options.requireExplicitMessageTarget,
+          sourceReplyContext: {
+            provider: params.messageChannel ?? params.messageProvider,
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+            mainKey: params.config?.session?.mainKey,
+          },
         }),
       ].join("\n"),
     },

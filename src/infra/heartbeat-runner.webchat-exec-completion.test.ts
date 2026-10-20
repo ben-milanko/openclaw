@@ -59,6 +59,7 @@ it("suppresses a routeless cron reminder on a WebChat session", async () => {
       .mockResolvedValue({ text: "Reminder handled" });
     await runProjectionWake(scenario, reply, "cron");
     expect(reply).toHaveBeenCalledOnce();
+    expect(reply.mock.calls[0]?.[0]).toMatchObject({ Provider: "webchat", Surface: "webchat" });
     expect(reply.mock.calls[0]?.[0].Body).not.toContain("Please relay this reminder to the user");
     expect(await readProjectionMessages(scenario)).toEqual([]);
   });

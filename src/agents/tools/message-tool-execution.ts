@@ -201,13 +201,12 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
     inferredCurrentChannel.currentChannelProvider,
     preparedMessageToolCatalog,
   );
-  const explicitTargetGuard = options?.requireExplicitTarget
-    ? createMessageToolExplicitTargetGuard({
-        currentChannelProvider: inferredCurrentChannel.currentChannelProvider,
-        preparedMessageToolCatalog,
-        decisionChannel,
-      })
-    : undefined;
+  const explicitTargetGuard = createMessageToolExplicitTargetGuard({
+    sourceReplyOptions: options,
+    currentChannelProvider: inferredCurrentChannel.currentChannelProvider,
+    preparedMessageToolCatalog,
+    decisionChannel,
+  });
   // Schema and prompt must use the same snapshot; repeated discovery can drift
   // across plugin hooks while needlessly loading channel action metadata twice.
   const actions = messageToolDiscoveryParams

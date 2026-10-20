@@ -99,6 +99,12 @@ export function createAgentHarnessHostCapabilities(params: {
   runWithScope: <T>(run: () => Promise<T>) => Promise<T>;
 } {
   const attempt = params.attempt;
+  const sourceReplyContext = Object.freeze({
+    provider: attempt.messageChannel ?? attempt.messageProvider,
+    sessionKey: attempt.sessionKey,
+    sessionId: attempt.sessionId,
+    mainKey: attempt.config?.session?.mainKey,
+  });
   // Capture authority by value before any plugin handoff can mutate the attempt.
   const runtimePluginToolGrant = attempt.runtimePluginToolGrant
     ? Object.freeze({
@@ -687,6 +693,15 @@ export function createAgentHarnessHostCapabilities(params: {
           isWebchatConnect: () => false,
           ...getPluginRuntimeGatewayRequestScope(),
           ...nodeAuthorities,
+          readSourceReplyContext: () => {
+            try {
+              assertActive();
+              return sourceReplyContext;
+            } catch {
+              // Retained plugin work cannot advertise a retired source-reply sink.
+              return undefined;
+            }
+          },
         },
         run,
       );

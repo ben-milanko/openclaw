@@ -2160,6 +2160,25 @@ describe("prepareCliRunContext", () => {
     },
   );
 
+  it("adds the bound main WebChat exception to CLI turn guidance without weakening target policy", async () => {
+    const context = await fixture.prepare({
+      config: createBundledMessageToolConfig(),
+      sessionKey: "agent:main:main",
+      messageChannel: "webchat",
+      sourceReplyDeliveryMode: "message_tool_only",
+      requireExplicitMessageTarget: true,
+    });
+    expect(context.params.requireExplicitMessageTarget).toBe(true);
+    expect(context.params.prompt).toContain(
+      "bound main WebChat conversation only, omit channel/target",
+    );
+    expect(context.params.prompt).toContain(
+      "Other destinations and actions still require an explicit target",
+    );
+    expect(context.params.transcriptPrompt).toBe("latest ask");
+    await context.preparedBackend.cleanup?.();
+  });
+
   it("invalidates a stable CLI binding when explicit message-target policy changes", async () => {
     const context = await fixture.prepare({
       sourceReplyDeliveryMode: "message_tool_only",
