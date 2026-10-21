@@ -14,6 +14,7 @@ struct ChatMediaAudioAttachment: View {
     }
 
     let artifactId: String
+    let playbackKey: ChatMediaAudioPlaybackKey
     let label: String
     let durationSeconds: Double?
     let resolverReady: Bool
@@ -36,14 +37,18 @@ struct ChatMediaAudioAttachment: View {
                 self.unavailableRow
             }
         }
-        .task(id: "\(self.artifactId):\(self.resolverReady):\(self.retryGeneration)") {
+        .task(id: LoadIdentity(
+            key: self.playbackKey,
+            resolverReady: self.resolverReady,
+            retryGeneration: self.retryGeneration)) {
             await self.loadAudio()
         }
-        .onDisappear {
-            if case let .loaded(player) = self.state {
-                player.stop()
-            }
-        }
+    }
+
+    private struct LoadIdentity: Hashable {
+        let key: ChatMediaAudioPlaybackKey
+        let resolverReady: Bool
+        let retryGeneration: Int
     }
 
     private func waitingRow(_ message: String) -> some View {
@@ -142,8 +147,15 @@ struct ChatMediaAudioAttachment: View {
     }
 
     private func loadAudio() async {
+        // Already downloaded audio remains usable through reconnects and row
+        // recreation. Do not replace its player when resolver health changes.
+        if let player = ChatMediaPlaybackCoordinator.shared.audioPlayer(for: self.playbackKey) {
+            self.state = .loaded(player)
+            return
+        }
         if case let .loaded(player) = self.state {
-            player.stop()
+            if player.playbackKey == self.playbackKey, !player.isUnavailable { return }
+            if !player.isUnavailable { player.pause() }
         }
         guard self.resolverReady else {
             self.state = .unavailable
@@ -164,8 +176,13 @@ struct ChatMediaAudioAttachment: View {
                 self.state = .unavailable
                 return
             }
+            if let player = ChatMediaPlaybackCoordinator.shared.audioPlayer(for: self.playbackKey) {
+                self.state = .loaded(player)
+                return
+            }
             self.state = try .loaded(ChatMediaAudioPlayer(
                 media: media,
+                playbackKey: self.playbackKey,
                 title: self.label,
                 fallbackDuration: self.durationSeconds,
                 playbackAllowed: self.playbackAllowed))
@@ -181,6 +198,7 @@ struct ChatMediaAudioAttachment: View {
 @MainActor
 @Observable
 final class ChatMediaAudioPlayer: NSObject, ChatMediaPlayer {
+    let playbackKey: ChatMediaAudioPlaybackKey
     private(set) var isPlaying = false
     private(set) var isPlaybackBlocked = false
     private(set) var isUnavailable = false
@@ -192,9 +210,14 @@ final class ChatMediaAudioPlayer: NSObject, ChatMediaPlayer {
     @ObservationIgnored private let playbackAllowed: @MainActor @Sendable () -> Bool
     @ObservationIgnored private var progressTask: Task<Void, Never>?
     @ObservationIgnored private var ownsAudioSession = false
+    @ObservationIgnored private var resumeAfterInterruption = false
+    #if os(iOS)
+    @ObservationIgnored private var audioSessionObservers: [NSObjectProtocol] = []
+    #endif
 
     init(
         media: OpenClawChatMediaData,
+        playbackKey: ChatMediaAudioPlaybackKey,
         title: String,
         fallbackDuration: TimeInterval?,
         playbackAllowed: @escaping @MainActor @Sendable () -> Bool) throws
@@ -205,29 +228,33 @@ final class ChatMediaAudioPlayer: NSObject, ChatMediaPlayer {
             ? self.player.duration
             : max(0, fallbackDuration ?? 0)
         self.title = title
+        self.playbackKey = playbackKey
         self.playbackAllowed = playbackAllowed
         super.init()
         self.player.delegate = self
         self.player.prepareToPlay()
+        self.seek(to: ChatMediaPlaybackCoordinator.shared.audioPosition(for: playbackKey))
+        #if os(iOS)
+        self.observeAudioSession()
+        #endif
+    }
+
+    isolated deinit {
+        #if os(iOS)
+        for observer in self.audioSessionObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        #endif
     }
 
     func seek(to time: TimeInterval) {
+        guard time.isFinite else { return }
         let upperBound = self.duration > 0 ? self.duration : self.player.duration
         let target = min(max(0, time), max(0, upperBound))
         self.player.currentTime = target
         self.currentTime = target
+        self.checkpoint()
         ChatMediaPlaybackCoordinator.shared.updateNowPlaying(self)
-    }
-
-    func stop() {
-        self.progressTask?.cancel()
-        self.progressTask = nil
-        self.player.stop()
-        self.player.currentTime = 0
-        self.currentTime = 0
-        self.isPlaying = false
-        self.deactivateAudioSession()
-        ChatMediaPlaybackCoordinator.shared.release(self)
     }
 
     var nowPlayingMetadata: ChatMediaNowPlayingMetadata {
@@ -238,11 +265,16 @@ final class ChatMediaAudioPlayer: NSObject, ChatMediaPlayer {
             playbackRate: self.isPlaying ? 1 : 0)
     }
 
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully _: Bool) {
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully: Bool) {
         guard player === self.player else { return }
+        guard successfully else {
+            self.fail()
+            return
+        }
         self.progressTask?.cancel()
         self.progressTask = nil
         self.currentTime = self.duration
+        ChatMediaPlaybackCoordinator.shared.recordAudioPosition(0, for: self.playbackKey)
         self.isPlaying = false
         self.deactivateAudioSession()
         ChatMediaPlaybackCoordinator.shared.release(self)
@@ -254,6 +286,7 @@ final class ChatMediaAudioPlayer: NSObject, ChatMediaPlayer {
     }
 
     func play() {
+        self.resumeAfterInterruption = false
         guard self.playbackAllowed() else {
             self.isPlaybackBlocked = true
             return
@@ -276,10 +309,13 @@ final class ChatMediaAudioPlayer: NSObject, ChatMediaPlayer {
     }
 
     func pause() {
+        let shouldCheckpoint = self.isPlaying || ChatMediaPlaybackCoordinator.shared.isActive(self)
+        self.resumeAfterInterruption = false
         self.progressTask?.cancel()
         self.progressTask = nil
         self.player.pause()
         self.currentTime = self.player.currentTime
+        if shouldCheckpoint { self.checkpoint() }
         self.isPlaying = false
         self.deactivateAudioSession()
         ChatMediaPlaybackCoordinator.shared.updateNowPlaying(self)
@@ -292,12 +328,73 @@ final class ChatMediaAudioPlayer: NSObject, ChatMediaPlayer {
         else { return }
         self.player.currentTime = 0
         self.currentTime = 0
+        self.checkpoint()
     }
 
     private func fail() {
-        self.stop()
+        // Decoding/retry must not discard the last known listening position.
+        let lastKnownTime = self.currentTime
+        let shouldCheckpoint = self.isPlaying || ChatMediaPlaybackCoordinator.shared.isActive(self)
+        self.pause()
+        self.currentTime = lastKnownTime
+        if shouldCheckpoint { self.checkpoint() }
+        ChatMediaPlaybackCoordinator.shared.release(self)
         self.isUnavailable = true
     }
+
+    private func checkpoint() {
+        ChatMediaPlaybackCoordinator.shared.recordAudioPosition(self.currentTime, for: self.playbackKey)
+    }
+
+    #if os(iOS)
+    private func observeAudioSession() {
+        let center = NotificationCenter.default
+        let session = AVAudioSession.sharedInstance()
+        self.audioSessionObservers.append(center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: session,
+            queue: .main) { [weak self] notification in
+                let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+                let options = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                Task { @MainActor [weak self] in
+                    guard let self, let type else { return }
+                    self.handleInterruption(type: type, options: options)
+                }
+            })
+        self.audioSessionObservers.append(center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: session,
+            queue: .main) { [weak self] notification in
+                let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+                guard reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
+                Task { @MainActor [weak self] in self?.pause() }
+            })
+        self.audioSessionObservers.append(center.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification,
+            object: session,
+            queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.fail() }
+            })
+    }
+
+    private func handleInterruption(type: UInt, options: UInt) {
+        switch AVAudioSession.InterruptionType(rawValue: type) {
+        case .began:
+            guard ChatMediaPlaybackCoordinator.shared.isActive(self) else { return }
+            let wasPlaying = self.isPlaying
+            self.pause()
+            self.resumeAfterInterruption = wasPlaying
+        case .ended:
+            let shouldResume = self.resumeAfterInterruption &&
+                AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) &&
+                ChatMediaPlaybackCoordinator.shared.isActive(self)
+            self.resumeAfterInterruption = false
+            if shouldResume { self.play() }
+        default:
+            break
+        }
+    }
+    #endif
 
     private func startProgressUpdates() {
         self.progressTask?.cancel()
@@ -311,6 +408,7 @@ final class ChatMediaAudioPlayer: NSObject, ChatMediaPlayer {
                     return
                 }
                 self.currentTime = self.player.currentTime
+                self.checkpoint()
                 ChatMediaPlaybackCoordinator.shared.updateNowPlaying(self)
             }
         }
