@@ -490,7 +490,9 @@ export async function admitFollowupTurn(params: {
       const updated = await patchSessionEntryCore(
         { sessionKey: replySessionKey, storePath: params.defaults.storePath },
         (entry) => {
-          if (!isGoalContinuationCurrent(continuation, entry)) return null;
+          if (!isGoalContinuationCurrent(continuation, entry)) {
+            return null;
+          }
           claimed = true;
           return { goal: { ...entry.goal!, continuationTurns: entry.goal!.continuationTurns + 1 } };
         },
@@ -501,7 +503,9 @@ export async function admitFollowupTurn(params: {
           },
         },
       );
-      if (!claimed || !updated) return { kind: "skipped", reason: "goal-inactive", operation };
+      if (!claimed || !updated) {
+        return { kind: "skipped", reason: "goal-inactive", operation };
+      }
       session.publish(updated);
     }
     // Only a returned turn transfers presentation cleanup to the runner.
