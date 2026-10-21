@@ -522,9 +522,10 @@ export const updateHandlers: GatewayRequestHandlers = {
             timeoutMs,
             restartDrainTimeoutMs: resolveGatewayRestartDeferralTimeoutMs(),
             restartDelayMs: requestedRestartDelayMs === undefined ? 0 : restartDelayMs,
-            ...(packageTarget
-              ? { packageTarget }
-              : { channel: handoffChannel, tag: adoptedPackageTargetVersion }),
+            ...(packageTarget && { packageTarget }),
+            ...(!packageTarget && handoffChannel && { channel: handoffChannel }),
+            ...(!packageTarget &&
+              adoptedPackageTargetVersion && { tag: adoptedPackageTargetVersion }),
             ...(devTarget ? { devTarget } : {}),
             meta: sentinelMeta,
             handoffId,

@@ -67,6 +67,7 @@ describe("assembled Gateway update capability", () => {
       expect(Object.keys(gatewayParameters(tools).properties).toSorted()).toEqual([
         "action",
         "note",
+        "target",
       ]);
     },
   );
