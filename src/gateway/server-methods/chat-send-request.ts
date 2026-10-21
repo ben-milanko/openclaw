@@ -321,6 +321,9 @@ export function normalizeChatSendRequest(params: {
       operationId: p.idempotencyKey,
       issuedAtMs: p.intent.issuedAtMs,
       objective: p.message,
+      ...(p.intent.maxContinuationTurns !== undefined
+        ? { maxContinuationTurns: p.intent.maxContinuationTurns }
+        : {}),
     };
     return fingerprintSessionGoalRequest([p, hasGatewayAdminScope(client)]).then(
       (requestFingerprint) => ({

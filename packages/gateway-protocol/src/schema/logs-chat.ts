@@ -300,6 +300,7 @@ export type QueueMode = (typeof QUEUE_MODES)[number];
 
 export const ChatSendIntentSchema = closedObject({
   kind: Type.Literal("session-goal-start"),
+  maxContinuationTurns: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
   version: Type.Literal(1),
   issuedAtMs: Type.Integer({ minimum: 0 }),
 });
