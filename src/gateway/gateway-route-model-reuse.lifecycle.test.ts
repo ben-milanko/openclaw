@@ -12,7 +12,15 @@ import type { GatewayClientRequestOptions } from "./client.js";
 
 type RouteBody = (context: Pick<TestContext, "signal" | "onTestFinished">) => Promise<unknown>;
 
-test("cancellation during agent.wait joins the registered route body before teardown completes", (context) =>
+test.for([
+  "ready",
+  "superseded",
+  "local-error",
+  "forbidden",
+  "non-retryable",
+  "superseded-twice",
+  "canceled-before-retry",
+] as const)("startup %s preserves route outcome and teardown custody", (startup, context) =>
   runQaGatewayTestFixture(
     context,
     async ({ signal: testSignal, createTempDir, verifyCleanup }) => {
@@ -24,6 +32,37 @@ test("cancellation during agent.wait joins the registered route body before tear
       const signal = AbortSignal.any([testSignal, cancel.signal]);
       const cancellation = new Error("route test canceled");
       const rpcFailure = new Error("gateway client stopped");
+      const { GatewayProtocolRequestError, retainGatewayResponsePayload } =
+        await import("../../packages/gateway-client/src/protocol-request.js");
+      const superseded = new GatewayProtocolRequestError({
+        code: startup === "forbidden" ? "FORBIDDEN" : "UNAVAILABLE",
+        message: "prepared model runtime catalog generation was superseded",
+        retryable: startup !== "non-retryable",
+        retryAfterMs: 0,
+      });
+      if (startup !== "local-error") {
+        retainGatewayResponsePayload(superseded, undefined);
+      }
+      const supersededAgain = new GatewayProtocolRequestError({
+        code: "UNAVAILABLE",
+        message: "prepared model runtime catalog generation was superseded again",
+        retryable: true,
+        retryAfterMs: 0,
+      });
+      retainGatewayResponsePayload(supersededAgain, undefined);
+      const startupFailures =
+        startup === "ready"
+          ? []
+          : startup === "superseded-twice"
+            ? [superseded, supersededAgain]
+            : [superseded];
+      const expectedStartupError =
+        startup === "ready" || startup === "superseded"
+          ? undefined
+          : startup === "canceled-before-retry"
+            ? cancellation
+            : startupFailures.at(-1);
+      let refreshAttempts = 0;
       const pendingRpc = createDeferred<never>();
       const rpcEntered = createDeferred();
       const clientClosing = createDeferred();
@@ -71,13 +110,28 @@ test("cancellation during agent.wait joins the registered route body before tear
       const request = vi.fn(
         async (method: string, _params?: unknown, options?: GatewayClientRequestOptions) => {
           switch (method) {
-            case "models.list":
+            case "models.list": {
+              if (
+                typeof _params === "object" &&
+                _params !== null &&
+                "refresh" in _params &&
+                _params.refresh === true
+              ) {
+                const failure = startupFailures[refreshAttempts++];
+                if (failure) {
+                  if (startup === "canceled-before-retry") {
+                    cancel.abort(cancellation);
+                  }
+                  throw failure;
+                }
+              }
               return {
                 models: Object.entries(config?.models?.providers ?? {}).flatMap(
                   ([providerId, value]) =>
                     value.models.map(({ id }) => ({ provider: providerId, id })),
                 ),
               };
+            }
             case "routeModelProof.stats":
               return { counts: {}, reloadSettled: true };
             case "agent":
@@ -192,6 +246,21 @@ test("cancellation during agent.wait joins the registered route body before tear
             return error;
           },
         );
+        if (expectedStartupError) {
+          releaseClient.resolve();
+          releaseInstance.resolve();
+          expect(await outcome).toBe(expectedStartupError);
+          teardown = verifyCleanup(drain);
+          await teardown;
+          expect(refreshAttempts).toBe(startup === "superseded-twice" ? 2 : 1);
+          expect(request.mock.calls.some(([method]) => method === "agent")).toBe(false);
+          expect(stopAndWait).toHaveBeenCalledOnce();
+          expect(cleanupInstance).toHaveBeenCalledOnce();
+          expect(provider?.listening).toBe(false);
+          expect(existsSync(stateDir)).toBe(false);
+          complete = true;
+          return;
+        }
         const endedEarly = outcome.then((error) => {
           if (error instanceof Error) {
             throw error;
@@ -199,7 +268,20 @@ test("cancellation during agent.wait joins the registered route body before tear
           throw new Error("Route body ended before the controlled gate", { cause: error });
         });
         void endedEarly.catch(() => {});
-        await Promise.race([rpcEntered.promise, endedEarly]);
+        const enteredRpc = await Promise.race([
+          rpcEntered.promise.then(() => true),
+          clientClosing.promise.then(() => false),
+          endedEarly,
+        ]);
+        if (!enteredRpc) {
+          releaseClient.resolve();
+          releaseInstance.resolve();
+          const failure = await outcome;
+          throw failure instanceof Error
+            ? failure
+            : new Error("Route fixture closed before agent.wait", { cause: failure });
+        }
+        expect(refreshAttempts).toBe(startup === "superseded" ? 2 : 1);
 
         const callsBeforeCancellation = request.mock.calls.length;
         cancel.abort(cancellation);
@@ -278,4 +360,5 @@ test("cancellation during agent.wait joins the registered route body before tear
       }
       vi.resetModules();
     },
-  ));
+  ),
+);
