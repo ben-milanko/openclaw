@@ -4,6 +4,16 @@ import Foundation
 import MediaPlayer
 #endif
 
+struct ChatMediaAudioPlaybackScope: Hashable, Sendable {
+    let ownerID: UUID
+    let sessionTarget: OpenClawChatSessionTarget
+}
+
+struct ChatMediaAudioPlaybackKey: Hashable, Sendable {
+    let scope: ChatMediaAudioPlaybackScope
+    let artifactID: String
+}
+
 @MainActor
 protocol ChatMediaPlaybackOwner: AnyObject {
     func stopForMediaPlaybackInterruption()
@@ -20,6 +30,7 @@ enum ChatMediaRemoteCommand: Equatable, Sendable {
     case play
     case pause
     case toggle
+    case seek(TimeInterval)
 }
 
 @MainActor
@@ -33,6 +44,7 @@ protocol ChatMediaPlayer: ChatMediaNowPlayingOwner {
     var isPlaying: Bool { get }
     func play()
     func pause()
+    func seek(to time: TimeInterval)
 }
 
 extension ChatMediaPlayer {
@@ -49,6 +61,7 @@ extension ChatMediaPlayer {
         case .play: self.play()
         case .pause: self.pause()
         case .toggle: self.toggle()
+        case let .seek(time): self.seek(to: time)
         }
     }
 }
@@ -90,6 +103,16 @@ private final class SystemChatMediaNowPlayingCenter: ChatMediaNowPlayingPublishi
         self.addTarget(to: center.playCommand, command: .play, handler: handler)
         self.addTarget(to: center.pauseCommand, command: .pause, handler: handler)
         self.addTarget(to: center.togglePlayPauseCommand, command: .toggle, handler: handler)
+        let seekCommand = center.changePlaybackPositionCommand
+        let token = seekCommand.addTarget { event in
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else {
+                return .commandFailed
+            }
+            let position = event.positionTime
+            Task { @MainActor in handler(.seek(position)) }
+            return .success
+        }
+        self.commandTargets.append((seekCommand, token))
     }
 
     func clear() {
@@ -132,6 +155,11 @@ final class ChatMediaPlaybackCoordinator {
     static let shared = ChatMediaPlaybackCoordinator()
 
     private weak var activeOwner: (any ChatMediaPlaybackOwner)?
+    // A scrolling transcript does not own the lifetime of an explicitly played
+    // recording. Retain only that recording; never cache every loaded clip.
+    private var retainedAudioPlayer: ChatMediaAudioPlayer?
+    private var audioPositions: [ChatMediaAudioPlaybackKey: TimeInterval] = [:]
+    private var audioPositionOrder: [ChatMediaAudioPlaybackKey] = []
     private let nowPlayingCenter: any ChatMediaNowPlayingPublishing
 
     init(nowPlayingCenter: any ChatMediaNowPlayingPublishing = SystemChatMediaNowPlayingCenter.shared) {
@@ -148,13 +176,50 @@ final class ChatMediaPlaybackCoordinator {
         // must not clear the replacement that already owns playback.
         self.activeOwner = owner
         previous?.stopForMediaPlaybackInterruption()
+        self.retainedAudioPlayer = owner as? ChatMediaAudioPlayer
         self.configureNowPlaying(for: owner)
     }
 
     func release(_ owner: any ChatMediaPlaybackOwner) {
         guard self.activeOwner === owner else { return }
         self.activeOwner = nil
+        self.retainedAudioPlayer = nil
         self.nowPlayingCenter.clear()
+    }
+
+    func audioPlayer(for key: ChatMediaAudioPlaybackKey) -> ChatMediaAudioPlayer? {
+        guard let player = self.retainedAudioPlayer,
+              player.playbackKey == key, !player.isUnavailable
+        else { return nil }
+        return player
+    }
+
+    func audioPosition(for key: ChatMediaAudioPlaybackKey) -> TimeInterval {
+        self.audioPositions[key] ?? 0
+    }
+
+    func recordAudioPosition(_ time: TimeInterval, for key: ChatMediaAudioPlaybackKey) {
+        guard time.isFinite, time >= 0 else { return }
+        if time == 0 {
+            self.audioPositions.removeValue(forKey: key)
+            self.audioPositionOrder.removeAll { $0 == key }
+            return
+        }
+        if self.audioPositions[key] == nil {
+            if self.audioPositionOrder.count == 128 {
+                self.audioPositions.removeValue(forKey: self.audioPositionOrder.removeFirst())
+            }
+            self.audioPositionOrder.append(key)
+        }
+        self.audioPositions[key] = time
+    }
+
+    func pauseAudio(ownerID: UUID) {
+        guard let player = self.retainedAudioPlayer,
+              player.playbackKey.scope.ownerID == ownerID
+        else { return }
+        player.pause()
+        self.release(player)
     }
 
     func isActive(_ owner: any ChatMediaPlaybackOwner) -> Bool {

@@ -37,6 +37,9 @@ final class IOSChatViewModelOwner {
         let reconnected = connected && !self.wasConnected
         self.wasConnected = connected
         if authorityChanged { self.viewModel?.retireQuestionAuthority() }
+        if authorityChanged || self.ownerID != ownerID {
+            self.viewModel?.pauseMediaPlayback()
+        }
         if let viewModel, !viewModel.isQuestionAuthorityRetired, !authorityChanged,
            self.ownerID == ownerID, self.transportAgentID == agentID
         {
