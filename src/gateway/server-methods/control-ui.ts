@@ -43,11 +43,7 @@ import {
 } from "../session-sharing-read.js";
 import { createSessionListEntryFilter } from "../session-sharing.js";
 import { resolveAgentIdOrRespondError } from "./agent-id-shared.js";
-import type {
-  GatewayClient,
-  GatewayRequestContext,
-  GatewayRequestHandlers,
-} from "./types.js";
+import type { GatewayClient, GatewayRequestContext, GatewayRequestHandlers } from "./types.js";
 
 type LoadGitHubPreview = typeof gitHubPublicApi.loadControlUiGitHubPreview;
 
