@@ -233,7 +233,6 @@ function* createOpenClawToolsSteps(
   const spawnWorkspaceDir = resolveWorkspaceRoot(options?.spawnWorkspaceDir ?? workspaceDir);
   options?.recordToolPrepStage?.("openclaw-tools:session-workspace");
   const widgetPresentation = resolveWidgetPresentationForRun(options);
-  const inlineWidgetClientAvailable = options?.clientCaps?.includes("inline-widgets") === true;
   const sessionKey = normalizeOptionalString(options?.runSessionKey ?? options?.agentSessionKey);
   const gatewayCallerAccountId = options?.gatewayCallerAccountId ?? options?.agentAccountId;
   const deliveryContext = {
@@ -407,20 +406,6 @@ function* createOpenClawToolsSteps(
     resolvedConfig?.tools?.deny,
     options?.pluginToolDenylist,
   );
-  const scheduledWidgetExplicitlyAllowed = isToolExplicitlyAllowedByFactoryPolicy({
-    toolName: "show_widget",
-    allowlist: options?.runtimeToolAllowlist,
-    denylist: explicitFactoryDenylist,
-  });
-  // Admitted Control UI recovery and explicitly capped scheduled turns can
-  // keep authoring their durable board without claiming an inline renderer.
-  const pinnedWidgetOnly =
-    (options?.pinnedWidgetAuthoring === true ||
-      (options?.gatewayCallerScheduled === true && scheduledWidgetExplicitlyAllowed)) &&
-    !inlineWidgetClientAvailable &&
-    !widgetPresentation.currentChannelPresenter &&
-    Boolean(sessionKey) &&
-    !isCronRunSessionKey(sessionKey);
   const includeMessageTool =
     !embedded ||
     options?.sourceReplyDeliveryMode === "message_tool_only" ||
@@ -524,8 +509,8 @@ function* createOpenClawToolsSteps(
           agentId: sessionAgentId,
           agentSessionKey: sessionKey,
           inlineHostEnabled: isCoreCanvasHostEnabled(resolvedConfig),
-          inlineClientAvailable: inlineWidgetClientAvailable,
-          pinnedOnly: pinnedWidgetOnly,
+          inlineClientAvailable: widgetPresentation.inlineClientAvailable,
+          pinnedOnly: widgetPresentation.pinnedOnly,
           presenters: widgetPresentation.presenters,
           presenterContext: widgetPresentation.context,
         }),
