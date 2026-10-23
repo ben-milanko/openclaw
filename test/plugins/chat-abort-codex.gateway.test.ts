@@ -243,14 +243,14 @@ describe("chat.abort native transcript settlement", () => {
           expect(messages).toHaveLength(1);
           if (hasNativeText) {
             expect(mirrored.assistantTranscriptOwned).toBe(true);
-            const nativeKey = `codex-app-server:${native.threadId}:${turnId}:assistant`;
-            expect(mirrored.assistantTranscriptIdempotencyKey).toBe(nativeKey);
+            // Owned terminal replies use the caller key; native provenance remains below.
+            expect(mirrored.assistantTranscriptIdempotencyKey).toBe(runId);
             expect(messages[0]).toMatchObject({
               id: mirrored.terminalAnchor?.entryId,
               message: {
                 content: [{ type: "text", text: nativeText }],
                 stopReason: "aborted",
-                idempotencyKey: nativeKey,
+                idempotencyKey: runId,
                 __openclaw: {
                   mirrorIdentity: `${turnId}:assistant`,
                   mirrorOrigin: "codex-app-server",
@@ -268,7 +268,7 @@ describe("chat.abort native transcript settlement", () => {
               storePath: target.storePath,
               entryId: messages[0]?.id,
               rawSeq: expect.any(Number),
-              idempotencyKey: nativeKey,
+              idempotencyKey: runId,
             });
           } else {
             expect(mirrored.assistantTranscriptOwned).toBe(false);

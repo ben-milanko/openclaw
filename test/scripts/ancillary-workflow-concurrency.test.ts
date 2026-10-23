@@ -473,6 +473,23 @@ it("honors cancellation after a schedule-only scope job is skipped", () => {
 describe("Labeler admission", () => {
   const workflow = parse(readFileSync(".github/workflows/labeler.yml", "utf8")) as Workflow;
   const bodyChange = { body: { from: "Previous description" } };
+  it.each(["pull_request_target", "issues", "workflow_dispatch"] as const)(
+    "does not admit upstream App automation on a fork for %s",
+    async (eventName) => {
+      const github: Github = {
+        ...refEvent(workflow, "workflow_dispatch", 100),
+        repository: "ben-milanko/openclaw",
+        event_name: eventName,
+        event: {
+          action: "opened",
+          pull_request: { number: 123, draft: false, head: { sha: "a".repeat(40) } },
+          issue: { number: 123 },
+        },
+      };
+      const result = await admission(workflow, github);
+      expect(Object.values(result.eligibility.jobs).every((eligible) => !eligible)).toBe(true);
+    },
+  );
   function event(
     runId: number,
     action: string,
