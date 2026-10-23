@@ -264,7 +264,9 @@ describe("requester continuation persisted automation management", () => {
               delivery: { mode: "none" },
             },
           }),
-        ).rejects.toThrow("This turn can only list, get, update, run, or remove automations");
+        ).rejects.toThrow(
+          "This turn can only list, get, inspect run history, update, run, or remove automations",
+        );
         expect(await fixture.read()).toEqual([]);
       } finally {
         clearGatewayContextResolver(admitted);

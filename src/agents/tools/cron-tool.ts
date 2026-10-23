@@ -245,10 +245,10 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
     displaySummary: CRON_TOOL_DISPLAY_SUMMARY,
     description: selfRemoveOnly
       ? managementAuthority?.managementOnly
-        ? "Inspect or remove only the current automation. Actions: list [includeDisabled], get jobId, remove jobId. Use the current job ID; other jobs and management actions are unavailable."
+        ? "Inspect or remove only the current automation. Actions: list [includeDisabled], get/runs/remove jobId; runs accepts runId for one recorded run. Use the current job ID; other jobs and management actions are unavailable."
         : 'Inspect or remove only the current automation. Actions: status; list [includeDisabled]; get/runs/remove jobId; next_check in:"15m" for this paced run. Use the current job ID. To stop a finished job, remove it; creating/updating/running jobs and waking sessions are unavailable. Return the task result; the scheduler owns delivery.'
       : managementAuthority?.managementOnly
-        ? 'Manage any existing automation on this Gateway with the admitted automation management authority. Actions: list [includeDisabled,limit,offset] (compact summaries with timing; follow nextOffset); get jobId (full schedule, payload, and delivery details); update jobId job (partial patch, null clears); run jobId (runMode:"force" runs now; waits up to timeoutMs, default 60s, and returns the finished run, or its runId if still running); remove jobId (operator removal requests cancellation of an active run; the result reports activeRunCancellationRequested:true). Creator attribution and scheduled execution policy stay intact. Use the Automations page for other actions.'
+        ? 'Manage any existing automation on this Gateway with the admitted automation management authority. Actions: list [includeDisabled,limit,offset] (compact summaries with timing; follow nextOffset); get jobId (full schedule, payload, and delivery details); runs jobId runId? (recorded run status, errors, delivery outcome, and summary); update jobId job (partial patch, null clears); run jobId (runMode:"force" runs now; waits up to timeoutMs, default 60s, and returns the finished run, or its runId if still running); remove jobId (operator removal requests cancellation of an active run; the result reports activeRunCancellationRequested:true). Creator attribution and scheduled execution policy stay intact. Use the Automations page for other actions.'
         : buildCronToolDescription({ triggersEnabled }),
     outputSchema: CronToolOutputSchema,
     parameters: createCronToolSchema({
@@ -297,7 +297,7 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
         !CRON_MANAGEMENT_METHODS.some((method) => method === `cron.${action}`)
       ) {
         throw new Error(
-          "This turn can only list, get, update, run, or remove automations. Use the Automations page for other actions.",
+          "This turn can only list, get, inspect run history, update, run, or remove automations. Use the Automations page for other actions.",
         );
       }
       assertCronSelfRemoveScope(opts, action, params);
@@ -651,9 +651,7 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
             if (result.enqueued !== true || result.run) {
               return jsonResult(result);
             }
-            const followUp = managementAuthority?.managementOnly
-              ? "check it later on the Automations page"
-              : "check it later with runs jobId runId";
+            const followUp = "check it later with runs jobId runId";
             return jsonResult({
               ...result,
               note: result.finished
