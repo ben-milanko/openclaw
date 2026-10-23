@@ -219,6 +219,7 @@ export async function handoffUpdateFromGateway(params: {
     restartDrainTimeoutMs: resolveGatewayRestartDeferralTimeoutMs(),
     channel: normalizeUpdateChannel(params.opts.channel) ?? undefined,
     tag: params.tag,
+    packageTarget: params.opts.packageTarget,
     devTarget: params.devTarget,
     acceptCapabilities: params.opts.acceptCapabilities,
     admission: params.opts.admission,
