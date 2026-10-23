@@ -21,6 +21,8 @@ import "../../components/app-sidebar.tsx";
 
 describe("AppSidebar agent chip", () => {
   it("loads and expands child sessions with menus but without root placement controls", async () => {
+    // Runtime sampling must not depend on how long rendering takes on a busy runner.
+    vi.spyOn(Date, "now").mockReturnValue(100_000);
     const gatewayHarness = createGatewayHarness({} as GatewayBrowserClient);
     const { gateway } = gatewayHarness;
     const harness = createSessionsHarness("main", ["agent:main:parent"]);
@@ -130,8 +132,7 @@ describe("AppSidebar agent chip", () => {
     const childTrail = childRows[0]?.querySelector<HTMLElement>(".session-row-trail");
     expect(childTrail?.querySelector("openclaw-elapsed-time")).not.toBeNull();
     expect(childRows[0]?.querySelector("a")?.getAttribute("aria-describedby")).toBe(childTrail?.id);
-    expect(runtimeStartMs).toBeGreaterThan(Date.now() - 31_000);
-    expect(runtimeStartMs).toBeLessThan(Date.now() - 29_000);
+    expect(runtimeStartMs).toBe(70_000);
 
     harness.list.mockResolvedValue({
       ts: 3,
