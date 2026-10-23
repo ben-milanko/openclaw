@@ -143,6 +143,7 @@ describe("AgentRuntimePlan tool policy helpers", () => {
 
   it.each([
     ["plan", "unchanged"],
+    ["plan", "cloned"],
     ["provider", "unchanged"],
     ["provider", "cloned"],
   ] as const)(
@@ -159,6 +160,17 @@ describe("AgentRuntimePlan tool policy helpers", () => {
       builder.registry.plugins.push(record);
       const api = builder.createApi(record, { config: {} });
       const instance = getPluginInstance(record)!;
+      const toolRecord = createPluginRecord({
+        id: "tool-fixture",
+        source: "/synthetic/tool-fixture.ts",
+        origin: "bundled",
+        enabled: true,
+        configSchema: false,
+        contracts: { tools: ["fixture__lookup_note"] },
+      });
+      builder.registry.plugins.push(toolRecord);
+      const toolApi = builder.createApi(toolRecord, { config: {} });
+      const toolInstance = expectDefined(getPluginInstance(toolRecord), "tool owner instance");
       const catalogRef = createToolSearchCatalogRef();
       try {
         const output = { content: [{ type: "text" as const, text: "fixture note" }], details: {} };
@@ -178,7 +190,14 @@ describe("AgentRuntimePlan tool policy helpers", () => {
             operation: "tool",
           },
         };
-        setPluginToolMeta(tool, metadata);
+        toolApi.registerTool(tool);
+        const admittedTool = expectDefined(builder.registry.tools[0], "registered tool").factory(
+          {},
+        );
+        if (!admittedTool || Array.isArray(admittedTool)) {
+          throw new Error("Expected one registered fixture tool");
+        }
+        setPluginToolMeta(admittedTool, metadata);
         api.registerProvider({
           id: "normalizer-fixture",
           label: "Normalizer fixture",
@@ -199,7 +218,7 @@ describe("AgentRuntimePlan tool policy helpers", () => {
             : undefined;
         const normalized = normalizeAgentRuntimeTools({
           runtimePlan,
-          tools: [tool],
+          tools: [admittedTool],
           provider: "openai",
         });
         const normalizedTool = expectDefined(normalized[0], "normalized tool");
@@ -217,15 +236,25 @@ describe("AgentRuntimePlan tool policy helpers", () => {
         await expect(normalizedTool.execute("current-call", {})).resolves.toBe(output);
         await expect(wrappedTool.execute("wrapped-call", {})).resolves.toBe(output);
         await instance.dispose();
-        expect(() => normalizedTool.execute("retired-call", {})).toThrow(
+        expect(() => normalize([admittedTool])).toThrow(
           "Plugin normalizer-fixture was reloaded or disabled",
         );
+        // Schema normalization does not transfer the tool to the provider's lifetime.
+        await expect(normalizedTool.execute("provider-retired-call", {})).resolves.toBe(output);
+        await expect(wrappedTool.execute("provider-retired-wrapped-call", {})).resolves.toBe(
+          output,
+        );
+        await toolInstance.dispose();
+        expect(() => normalizedTool.execute("retired-call", {})).toThrow(
+          "Plugin tool-fixture was reloaded or disabled",
+        );
         await expect(wrappedTool.execute("retired-wrapped-call", {})).rejects.toThrow(
-          "Plugin normalizer-fixture was reloaded or disabled",
+          "Plugin tool-fixture was reloaded or disabled",
         );
       } finally {
         clearToolSearchCatalog({ catalogRef });
         await instance.dispose();
+        await toolInstance.dispose();
       }
     },
   );

@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { WorkerTaskPool } from "../../infra/worker-task-pool.js";
 import { resetLogger, setLoggerOverride } from "../../logging/logger.js";
 import { loggingState } from "../../logging/state.js";
 import { resolveInstalledPluginIndexPolicyHash } from "../../plugins/installed-plugin-index-policy.js";
@@ -603,6 +604,16 @@ describe("loadWorkspaceSkills", () => {
       bundledSkillsDir: "",
       pluginSkillsDir: path.join(workspaceDir, ".plugin-skills"),
     };
+    const completePassiveScan = async () => {
+      const tasks = vi.spyOn(WorkerTaskPool.prototype, "run");
+      try {
+        await vi.advanceTimersByTimeAsync(60_000);
+        // Advancing the interval starts real worker IO; await its publication before reading.
+        await Promise.all(tasks.mock.results.map((result) => result.value));
+      } finally {
+        tasks.mockRestore();
+      }
+    };
     const scoped = (executionWorkspaceDir: string) => ({ ...options, executionWorkspaceDir });
     try {
       const first = await prepareWorkspaceSkills(workspaceDir, options);
@@ -625,7 +636,7 @@ describe("loadWorkspaceSkills", () => {
       await writeWorkspaceSkills(changedExecutionDir, [
         { name: "cached-skill", description: "Changed loser" },
       ]);
-      await vi.advanceTimersByTimeAsync(60_000);
+      await completePassiveScan();
       expect(
         (await prepareWorkspaceSkills(workspaceDir, scoped(changedExecutionDir)))[0]?.skill
           .description,
@@ -635,7 +646,7 @@ describe("loadWorkspaceSkills", () => {
         { name: "fresh-skill", description: "Fresh skill" },
       ]);
       expect(await prepareWorkspaceSkills(workspaceDir, options)).toEqual(first);
-      await vi.advanceTimersByTimeAsync(60_000);
+      await completePassiveScan();
       for (const executionDir of executionDirs) {
         expect(
           (await prepareWorkspaceSkills(workspaceDir, scoped(executionDir))).map(
@@ -645,6 +656,7 @@ describe("loadWorkspaceSkills", () => {
       }
       expect(getSkillsSnapshotVersion(workspaceDir)).toBeGreaterThan(version);
     } finally {
+      await closeSkillsWatchers(true);
       vi.useRealTimers();
     }
   });
