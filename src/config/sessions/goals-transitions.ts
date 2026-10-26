@@ -66,7 +66,7 @@ export function accountSessionGoalUsage(
 
 export function buildCreatedSessionGoal(
   entry: SessionEntry,
-  options: { objective: string; tokenBudget?: number },
+  options: { objective: string; tokenBudget?: number; maxContinuationTurns?: number },
   now: number,
 ): SessionGoal {
   const objective = options.objective;
@@ -75,6 +75,14 @@ export function buildCreatedSessionGoal(
   }
   if (entry.goal) {
     throw new SessionGoalTransitionError("goal already exists");
+  }
+  if (
+    options.maxContinuationTurns !== undefined &&
+    (!Number.isInteger(options.maxContinuationTurns) ||
+      options.maxContinuationTurns < 1 ||
+      options.maxContinuationTurns > 100)
+  ) {
+    throw new SessionGoalTransitionError("maxContinuationTurns must be an integer from 1 to 100");
   }
   const tokenBudget = normalizeTokenBudget(options.tokenBudget);
   const tokenStart = resolveEntryFreshTotalTokens(entry);
@@ -90,6 +98,9 @@ export function buildCreatedSessionGoal(
     tokensUsed: 0,
     ...(tokenBudget ? { tokenBudget } : {}),
     continuationTurns: 0,
+    ...(options.maxContinuationTurns !== undefined
+      ? { maxContinuationTurns: options.maxContinuationTurns }
+      : {}),
   };
 }
 

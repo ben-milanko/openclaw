@@ -22,6 +22,7 @@ export const SessionGoalSchema = closedObject({
   tokensUsed: Type.Number(),
   tokenBudget: Type.Optional(Type.Number()),
   continuationTurns: Type.Number(),
+  maxContinuationTurns: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
   lastStatusNote: Type.Optional(Type.String()),
   pausedAt: Type.Optional(Type.Number()),
   blockedAt: Type.Optional(Type.Number()),

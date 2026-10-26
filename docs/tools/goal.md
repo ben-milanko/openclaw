@@ -179,6 +179,29 @@ OpenClaw keeps the line compact by truncating long objectives. Paused,
 blocked, budget-limited, usage-limited, and complete goals are not injected,
 so an operator stop remains in effect until the goal is resumed.
 
+## Opt-in bounded continuation
+
+Goals remain manual by default. Explicitly set `max_continuation_turns` (1–100)
+in `create_goal`, or `intent.maxContinuationTurns` in a structured Goal-start
+`chat.send` request, to permit automatic follow-up turns. Saving an objective
+alone does not launch work. The Control UI and slash commands keep their defaults.
+
+After a successful built-in chat turn, the normal follow-up queue may admit
+another internal turn while the same goal remains active. Each admitted
+automatic turn consumes one slot from the saved bound. Exhaustion leaves the
+objective active but stops automatic turns. This lifetime bound is not reset by
+Resume; ordinary user turns remain available.
+
+Pending user input takes priority. Pending tools, approval prompts, yielded runs,
+and unsettled children retain their existing continuation owners. Stop cancels
+queued work; pause, clear, complete, token exhaustion, and terminal failures
+prevent further nudges. Each nudge rechecks the session and goal at admission.
+These turns do not appear as new human messages.
+
+This uses normal admission and permissions, not a periodic scanner. Shutdown
+does not independently restart goal work. Native Codex, external runtimes,
+heartbeats, and independent scheduled work are not made autonomous.
+
 ## Control UI
 
 Select **Goal** from the command picker with Enter, Tab, or a click, then type
@@ -314,7 +337,8 @@ session key, not the transport, so two surfaces sharing a session key see the
 same goal.
 
 Goal state is not a delivery directive: it does not force replies through a
-channel, change queue behavior, approve tools, or schedule work.
+channel or approve tools. Automatic continuation requires the explicit bounded
+opt-in described above.
 
 ## Troubleshooting
 
