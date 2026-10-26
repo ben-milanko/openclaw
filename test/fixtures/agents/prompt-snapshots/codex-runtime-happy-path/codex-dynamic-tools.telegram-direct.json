@@ -954,6 +954,65 @@
               "description": "Required for config.schema.lookup; optional for config.get.",
               "type": "string"
             },
+            "target": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "git",
+                      "type": "string"
+                    },
+                    "upstreamRef": {
+                      "minLength": 1,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+                      "type": "string"
+                    },
+                    "upstreamSha": {
+                      "pattern": "^[a-fA-F0-9]{40}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["kind", "upstreamRef", "upstreamSha"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "buildId": {
+                      "maxLength": 96,
+                      "minLength": 1,
+                      "pattern": "^\\S+(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "const": "package",
+                      "type": "string"
+                    },
+                    "path": {
+                      "description": "Absolute local path to the reviewed .tgz or .tar.gz package.",
+                      "maxLength": 4096,
+                      "minLength": 1,
+                      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f-\\u009f])(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\).+\\.(?:tgz|tar\\.gz)$",
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "maxLength": 64,
+                      "minLength": 64,
+                      "pattern": "^[a-f0-9]{64}$",
+                      "type": "string"
+                    },
+                    "version": {
+                      "maxLength": 256,
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$(?![\\s\\S])",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["kind", "path", "version", "buildId", "sha256"],
+                  "type": "object"
+                }
+              ]
+            },
             "timeoutMs": {
               "minimum": 1,
               "type": "integer"

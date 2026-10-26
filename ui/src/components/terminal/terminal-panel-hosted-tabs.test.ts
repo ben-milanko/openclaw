@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "../../i18n/index.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
@@ -78,6 +78,11 @@ function button(container: HTMLElement, label: string) {
 }
 
 describe("Terminal panel hosted tabs", () => {
+  beforeAll(async () => {
+    // Load the real responder before short readiness assertions on a cold worker.
+    await import("@openclaw/libterminal/browser");
+  });
+
   beforeEach(async () => {
     vi.stubGlobal("localStorage", createStorageMock());
     vi.stubGlobal("sessionStorage", createStorageMock());

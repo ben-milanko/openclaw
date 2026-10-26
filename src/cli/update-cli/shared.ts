@@ -88,6 +88,7 @@ export type UpdateCommandOptions = Pick<UpdateRunResult, "sourceRuntimePrepared"
   dryRun?: boolean;
   channel?: string;
   tag?: string;
+  packageTarget?: import("../../../packages/gateway-protocol/src/schema/config.js").PackageUpdateTarget;
   sha?: string;
   timeout?: string;
   drainTimeout?: string;

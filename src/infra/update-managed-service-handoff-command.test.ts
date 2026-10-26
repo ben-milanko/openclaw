@@ -114,6 +114,7 @@ async function startHandoffAndReadCommand(params: {
   runId?: string;
   channel: "beta" | "extended-stable";
   tag?: string;
+  packageTarget?: import("../../packages/gateway-protocol/src/schema/config.js").PackageUpdateTarget;
   acceptCapabilities?: boolean;
   admission?: "auto" | "installed";
   reapplyLocalOverrides?: boolean;
@@ -139,6 +140,7 @@ async function startHandoffAndReadCommand(params: {
     ...(params.restartDelayMs === undefined ? {} : { restartDelayMs: params.restartDelayMs }),
     channel: params.channel,
     ...(params.tag ? { tag: params.tag } : {}),
+    packageTarget: params.packageTarget,
     ...(params.acceptCapabilities ? { acceptCapabilities: true } : {}),
     admission: params.admission,
     ...(params.reapplyLocalOverrides ? { reapplyLocalOverrides: true } : {}),
@@ -187,6 +189,26 @@ async function startHandoffAndReadCommand(params: {
 }
 
 describe("managed service update handoff command", () => {
+  it("delivers the reviewed package pin to the actual detached helper without selectors", async () => {
+    const target = {
+      kind: "package" as const,
+      path: path.join(os.tmpdir(), "reviewed archive.tgz"),
+      version: "2026.10.5",
+      buildId: "reviewed-build",
+      sha256: "a".repeat(64),
+    };
+    const { commandArgv } = await startHandoffAndReadCommand({
+      channel: "beta",
+      tag: "latest",
+      packageTarget: target,
+    });
+    expect(commandArgv).toBeDefined();
+    const argv = commandArgv!;
+    expect(JSON.parse(argv[argv.indexOf("--package-target") + 1]!)).toEqual(target);
+    expect(argv).not.toContain("--tag");
+    expect(argv).not.toContain("--channel");
+  });
+
   it("pins update, recovery, and triage before the detached helper starts", async () => {
     const root = await fs.realpath(systemRoots.make("openclaw-handoff-launcher-"));
     const releaseA = path.join(root, "release-a");

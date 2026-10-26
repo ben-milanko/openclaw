@@ -83,6 +83,37 @@ describe("gateway update action", () => {
     host.context = {} as GatewayRequestContext;
   });
 
+  it.each([true, false])(
+    "forwards the exact package target with config reads %s",
+    async (allowConfigReads) => {
+      const target = {
+        kind: "package",
+        path: "/reviewed/openclaw.tgz",
+        version: "2026.10.5",
+        buildId: "reviewed-custom-build",
+        sha256: "a".repeat(64),
+      };
+      dispatchMock.mockResolvedValue({ ok: true, result: { status: "ok" } });
+      const tool = createGatewayTool({
+        allowConfigReads,
+        senderIsOwner: true,
+        requesterSenderId: "owner",
+      });
+
+      await tool.execute("exact-update", { action: "update.run", target });
+
+      expect(tool.parameters).toMatchObject({
+        properties: { target: { anyOf: expect.any(Array) } },
+      });
+      expect(dispatchMock).toHaveBeenCalledWith(
+        "update.run",
+        expect.objectContaining({ target }),
+        expect.anything(),
+      );
+      expect(callGatewayToolMock).not.toHaveBeenCalled();
+    },
+  );
+
   it("refuses scheduler-source injection inside a live non-scheduler run", async () => {
     const sessionKey = "agent:main:operator";
     const admission = prepareSystemAgentRunAdmission({}, "operator-run", "main", "test");

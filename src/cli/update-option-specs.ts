@@ -16,6 +16,10 @@ export const UPDATE_OPTION_SPECS: readonly [
     "--tag <dist-tag|version|spec>",
     "Override the package target for this update (dist-tag, version, or package spec)",
   ],
+  [
+    "--package-target <json>",
+    "Install a local package pinned to its version, build ID, and SHA-256",
+  ],
   ["--timeout <seconds>", "Set a per-step deadline in seconds"],
   ["--drain-timeout <seconds>", "Set the immutable activation drain budget before interruption"],
   ["--sha <commit>", "Prepare an exact official commit for an adopted immutable installation"],

@@ -40,7 +40,10 @@ function inheritedUpdateTimeout(
 }
 
 type CommanderUpdateOptions = Record<string, unknown> &
-  Omit<UpdateCommandOptions, "admission"> & { admission?: string };
+  Omit<UpdateCommandOptions, "admission" | "packageTarget"> & {
+    admission?: string;
+    packageTarget?: string;
+  };
 
 function requiredUpdateLeafString(opts: Record<string, unknown>, key: string): string {
   const value = opts[key];
@@ -211,6 +214,12 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/update", "docs.openclaw.ai/cli/up
           dryRun: Boolean(opts.dryRun),
           channel: opts.channel,
           tag: opts.tag,
+          packageTarget:
+            opts.packageTarget === undefined
+              ? undefined
+              : (
+                  await import("./update-cli/update-command-package-target.js")
+                ).parsePackageUpdateTargetJson(opts.packageTarget),
           sha: opts.sha,
           timeout: opts.timeout,
           drainTimeout: opts.drainTimeout,
