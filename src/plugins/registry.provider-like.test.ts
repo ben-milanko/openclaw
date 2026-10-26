@@ -1,8 +1,18 @@
 /** Verifies provider-like plugin registry entries across capability families. */
 import { expectDefined } from "@openclaw/normalization-core";
+import { Type } from "typebox";
 import { describe, expect, it, vi } from "vitest";
+import { createCronScheduledToolProjection } from "../agents/exec-tool-target-pinning.js";
+import { normalizeAgentRuntimeTools } from "../agents/runtime-plan/tools.js";
+import type { AnyAgentTool } from "../agents/tools/common.js";
+import { captureFinalEffectiveCronCreatorToolAllowlist } from "../agents/tools/cron-tool-creator-cap.js";
+import type {
+  CronCreatorToolAllowlistEntry,
+  CronToolsAllowCaptureRef,
+} from "../agents/tools/cron-tool.types.js";
 import { registryContainsRuntimePluginIds } from "./active-runtime-registry.js";
 import { createPluginRecord } from "./loader-records.js";
+import { getPluginInstance } from "./plugin-instance-scope.js";
 import { createTestPluginRegistry as createTestRegistry } from "./registry-runtime.test-helpers.js";
 import type {
   OpenClawPluginApi,
@@ -11,6 +21,95 @@ import type {
 } from "./types.js";
 
 describe("plugin registry provider-like registrations", () => {
+  it.each([false, true])(
+    "preserves scheduled shell authority through a registered schema normalizer (clone: %s)",
+    async (clone) => {
+      const builder = createTestRegistry();
+      const { record, api } = createCatalogOwner(builder, "schema-owner");
+      const instance = expectDefined(getPluginInstance(record), "schema owner instance");
+      let hostActive = true;
+      const aliases = (["exec", "process"] as const).map((kind) => {
+        const source: AnyAgentTool = {
+          name: kind,
+          label: kind,
+          description: `Synthetic ${kind}`,
+          parameters: Type.Object({}),
+          execute: vi.fn(async () => ({ content: [], details: {} })),
+        };
+        return createCronScheduledToolProjection(
+          source,
+          () => {
+            if (!hostActive) {
+              throw new Error("synthetic host retired");
+            }
+          },
+          kind,
+          kind === "exec"
+            ? {
+                kind,
+                name: "gateway_exec",
+                description: "Synthetic Gateway exec",
+                followupText: "Synthetic follow-up",
+                ask: "always",
+              }
+            : { kind, name: "gateway_process", description: "Synthetic Gateway process" },
+        );
+      });
+      try {
+        api.registerProvider({
+          id: "schema-provider",
+          label: "Schema provider",
+          auth: [],
+          normalizeToolSchemas: ({ tools }) => {
+            expect(instance.hasActiveCall).toBe(true);
+            return clone
+              ? tools.map((tool) => ({ ...tool, description: "Normalized schema" }))
+              : tools;
+          },
+        });
+        const provider = expectDefined(
+          builder.registry.providers[0],
+          "registered provider",
+        ).provider;
+        const normalize = () =>
+          normalizeAgentRuntimeTools({
+            provider: "schema-provider",
+            tools: aliases,
+            runtimeHandle: { provider: "schema-provider", plugin: provider },
+            allowProviderRuntimePluginLoad: false,
+          });
+        const normalized = normalize();
+        const capture = (tools: AnyAgentTool[]) => {
+          const cap: CronCreatorToolAllowlistEntry[] = [];
+          const ref: CronToolsAllowCaptureRef = {};
+          captureFinalEffectiveCronCreatorToolAllowlist(cap, ref, tools);
+          return cap;
+        };
+        expect(capture(normalized)).toEqual([
+          {
+            name: "exec",
+            aliasName: "gateway_exec",
+            execTarget: { host: "gateway", ask: "always" },
+          },
+          { name: "process", aliasName: "gateway_process" },
+        ]);
+        const process = expectDefined(normalized[1], "normalized process");
+        const originalExecute = process.execute;
+        process.execute = vi.fn(async () => ({ content: [], details: {} }));
+        expect(() => capture(normalized)).toThrow("changed after host creation");
+        process.execute = originalExecute;
+        await instance.dispose();
+        expect(normalize).toThrow("reloaded or disabled");
+        // Schema cleanup does not transfer host-created tools to the provider's lifetime.
+        expect(capture(normalized)).toHaveLength(2);
+        hostActive = false;
+        expect(() => capture(normalized)).toThrow("synthetic host retired");
+      } finally {
+        await instance.dispose();
+      }
+    },
+  );
+
   it("combines same-plugin overlapping model catalog hooks", async () => {
     const builder = createTestRegistry();
     const { record } = createCatalogOwner(builder, "catalog-owner");

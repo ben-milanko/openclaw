@@ -48,9 +48,8 @@ export function createProviderRegistrars(state: PluginRegistryState) {
     if (!record.providerIds.includes(id)) {
       record.providerIds.push(id);
     }
-    if (normalizedProvider.normalizeToolSchemas) {
-      getPluginInstance(record)?.admitFactory(normalizedProvider.normalizeToolSchemas);
-    }
+    // Schema cleanup returns host-owned tools, not newly owned executables.
+    // Factory wrapping would replace execute identities and detach their cron authority.
     registry.providers.push(
       createRegistration(record, {
         provider: { ...normalizedProvider, pluginRoot: record.rootDir },
