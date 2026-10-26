@@ -10,6 +10,7 @@ let chatUILogger = Logger(subsystem: "ai.openclaw", category: "OpenClawChatUI")
 @MainActor
 @Observable
 public final class OpenClawChatViewModel {
+    let mediaPlaybackOwnerID = UUID()
     static let maxAttachmentBytes = 5_000_000
     static let sessionListFetchLimit = 200
 
@@ -617,6 +618,7 @@ public final class OpenClawChatViewModel {
     /// Permanently retires a replaced presentation without aborting its gateway run.
     public func detachTransport() {
         guard !self.isTransportDetached else { return }
+        self.pauseMediaPlayback()
         self.cancelHistoryInvalidationRefresh()
         self.retireQuestionAuthority()
         self.resetSessionReactions()
@@ -644,6 +646,11 @@ public final class OpenClawChatViewModel {
 
     public func load() {
         startBootstrap()
+    }
+
+    /// Retires this presentation's recording without interrupting another window.
+    public func pauseMediaPlayback() {
+        ChatMediaPlaybackCoordinator.shared.pauseAudio(ownerID: self.mediaPlaybackOwnerID)
     }
 
     @discardableResult
@@ -1247,6 +1254,7 @@ extension OpenClawChatViewModel {
 
     /// Clears state owned by the current session/agent before a new identity can consume events.
     func clearSessionOwnedState() {
+        self.pauseMediaPlayback()
         self.resetSessionReactions()
         self.invalidateComposerCapabilities()
         self.modelSelectionID = Self.defaultModelSelectionID

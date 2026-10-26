@@ -27,6 +27,7 @@ struct ChatSessionSidebarPolicyModelTests {
         #expect(sections.filter { $0.id != "pinned" }.flatMap(\.nodes).map(\.id) == ["agent:ops:thread"])
     }
 
+    #if os(macOS)
     @Test func `all agent Pages retain pinned trees while every Home promotes its conversations`() throws {
         let rows = try JSONDecoder().decode(OpenClawChatSessionsListResponse.self, from: Data(#"""
         {"sessions":[
@@ -103,6 +104,7 @@ struct ChatSessionSidebarPolicyModelTests {
         #expect(root.visibleChildren(selectedKey: root.id, fullyShown: false, now: Date()) { _ in nil }
             .map(\.id) == ["agent:main:a", "agent:main:b", "agent:main:c", "agent:main:d", "agent:main:review"])
     }
+    #endif
 
     @Test(arguments: ["agent:main:cron:job", "agent:main:system-parent"])
     func `selected ancestry escapes ordinary discovery toggles`(parentKey: String) throws {
@@ -171,6 +173,7 @@ struct ChatSessionSidebarPolicyModelTests {
             (status == .all ? ["active", "archived-listed", "archived-backref"] : ["active"]))
     }
 
+    #if os(macOS)
     @Test(arguments: [OpenClawChatSidebarStatus.active, .snoozed, .all])
     func `descendants honor the current snooze filter`(status: OpenClawChatSidebarStatus) throws {
         let rows = try JSONDecoder().decode(OpenClawChatSessionsListResponse.self, from: Data(#"""
@@ -191,6 +194,7 @@ struct ChatSessionSidebarPolicyModelTests {
         #expect(tree.children.map(\.id) == (status == .all ? ["awake", "sleeping"] :
                 (status == .snoozed ? ["sleeping"] : ["awake"])))
     }
+    #endif
 
     @Test(arguments: [OpenClawChatSidebarStatus.all, .archived], [false, true])
     func `archived parents hide ordinary children but retain curated and selected roots`(
@@ -295,6 +299,7 @@ struct ChatSessionSidebarPolicyModelTests {
         #expect(roots.first?.children.first?.session.sessionId == "selected-id")
     }
 
+    #if os(macOS)
     @Test func `child reveal retains selected and folded failure branches but caps quiet rows`() throws {
         let rows = try JSONDecoder().decode(OpenClawChatSessionsListResponse.self, from: Data(#"""
         {"sessions":[
@@ -342,6 +347,7 @@ struct ChatSessionSidebarPolicyModelTests {
             viewOptions: .init()).flatMap(\.nodes)
         #expect(roots.map(\.id) == ["agent:main:child"])
     }
+    #endif
 
     @Test func `supplemental global Home promotes its persistent child without becoming a row`() throws {
         let rows = try JSONDecoder().decode(OpenClawChatSessionsListResponse.self, from: Data(#"""

@@ -780,11 +780,25 @@ extension OpenClawChatView {
                 await viewModel?.transport.resolveInlineWidgetResource(path: path, replacing: failedResource)
             },
             mediaArtifactResolverReady: self.viewModel.healthOK,
-            mediaPlaybackAllowed: self.mediaPlaybackAllowed,
-            loadMediaArtifact: { [weak viewModel] artifactId, kind, playback in
-                guard let viewModel else { return nil }
-                return try await viewModel.transport.loadMediaArtifact(
-                    sessionKey: viewModel.sessionKey,
+            mediaPlaybackScope: ChatMediaAudioPlaybackScope(
+                ownerID: self.viewModel.mediaPlaybackOwnerID,
+                sessionTarget: self.viewModel.currentSessionTarget),
+            mediaPlaybackAllowed: { [weak viewModel,
+                                    target = self.viewModel.currentSessionTarget,
+                                    allowed = self.mediaPlaybackAllowed] in
+                guard let viewModel, !viewModel.isTransportDetached,
+                      viewModel.currentSessionTarget == target
+                else { return false }
+                return allowed()
+            },
+            loadMediaArtifact: { [weak viewModel,
+                                 target = self.viewModel.currentSessionTarget,
+                                 transport = self.viewModel.transport] artifactId, kind, playback in
+                guard let viewModel, !viewModel.isTransportDetached,
+                      viewModel.currentSessionTarget == target
+                else { return nil }
+                return try await transport.loadMediaArtifact(
+                    sessionKey: target.sessionKey,
                     artifactId: artifactId,
                     kind: kind,
                     playback: playback)

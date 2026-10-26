@@ -321,6 +321,7 @@ struct ChatMessageBubble: View {
         String,
         OpenClawChatWidgetResource?) async -> OpenClawChatWidgetResource?
     let mediaArtifactResolverReady: Bool
+    let mediaPlaybackScope: ChatMediaAudioPlaybackScope
     let mediaPlaybackAllowed: @MainActor @Sendable () -> Bool
     let loadMediaArtifact: @MainActor @Sendable (
         String,
@@ -396,7 +397,8 @@ extension ChatMessageBubble: @MainActor Equatable {
             lhs.contextWindowTokens == rhs.contextWindowTokens &&
             lhs.userMessageExpanded == rhs.userMessageExpanded &&
             lhs.inlineWidgetResolverReady == rhs.inlineWidgetResolverReady &&
-            lhs.mediaArtifactResolverReady == rhs.mediaArtifactResolverReady
+            lhs.mediaArtifactResolverReady == rhs.mediaArtifactResolverReady &&
+            lhs.mediaPlaybackScope == rhs.mediaPlaybackScope
     }
 }
 
@@ -521,6 +523,7 @@ extension ChatMessageBubble {
                         isUser: self.isUser,
                         textColor: textColor,
                         resolverReady: self.mediaArtifactResolverReady,
+                        playbackScope: self.mediaPlaybackScope,
                         playbackAllowed: self.mediaPlaybackAllowed,
                         loadMedia: self.loadMediaArtifact)
                 }
@@ -783,6 +786,7 @@ private struct AttachmentRow: View {
     let isUser: Bool
     let textColor: Color
     let resolverReady: Bool
+    let playbackScope: ChatMediaAudioPlaybackScope
     let playbackAllowed: @MainActor @Sendable () -> Bool
     let loadMedia: @MainActor @Sendable (
         String,
@@ -808,6 +812,7 @@ private struct AttachmentRow: View {
             case .audio:
                 ChatMediaAudioAttachment(
                     artifactId: artifactId,
+                    playbackKey: ChatMediaAudioPlaybackKey(scope: self.playbackScope, artifactID: artifactId),
                     label: self.attachmentLabel,
                     durationSeconds: self.att.durationSeconds,
                     resolverReady: self.resolverReady,

@@ -229,6 +229,16 @@ final class ChatMediaVideoPlayer: ChatMediaPlayer {
         ChatMediaPlaybackCoordinator.shared.updateNowPlaying(self)
     }
 
+    func seek(to time: TimeInterval) {
+        guard time.isFinite else { return }
+        let duration = self.nowPlayingMetadata.duration
+        let target = duration > 0 ? min(max(0, time), duration) : max(0, time)
+        self.player.seek(
+            to: CMTime(seconds: target, preferredTimescale: 600),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero)
+    }
+
     var nowPlayingMetadata: ChatMediaNowPlayingMetadata {
         let duration = self.player.currentItem?.duration.seconds ?? 0
         let elapsed = self.player.currentTime().seconds

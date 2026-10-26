@@ -138,6 +138,9 @@ struct ChatMessageBubbleEquatableTests {
             inlineWidgetResolverReady: resolverReady,
             inlineWidgetResourceResolver: { _, _ in nil },
             mediaArtifactResolverReady: resolverReady,
+            mediaPlaybackScope: ChatMediaAudioPlaybackScope(
+                ownerID: UUID(uuidString: "9FA16BE9-4DFB-4908-BB07-AD597B2D16EF")!,
+                sessionTarget: OpenClawChatSessionTarget(sessionKey: "main", agentID: nil)),
             mediaPlaybackAllowed: { true },
             loadMediaArtifact: { _, _, _ in nil })
     }

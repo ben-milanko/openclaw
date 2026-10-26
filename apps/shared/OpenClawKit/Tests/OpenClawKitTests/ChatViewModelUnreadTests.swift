@@ -434,6 +434,7 @@ struct ChatViewModelUnreadTests {
         await viewModel.fetchSessions(limit: 200)
     }
 
+    #if os(macOS)
     @Test func `macOS roster consumers observe one canonical mutation without a stale copy`() async throws {
         let roster = Data(#"""
         {"sessions":[{"key":"agent:main:thread","agentId":"main","sessionId":"thread","label":"Before","updatedAt":10,"swarmGroupId":"group"}]}
@@ -512,6 +513,7 @@ struct ChatViewModelUnreadTests {
         await transport.waitForPatch()
         await gate.release()
     }
+    #endif
 
     @Test func `agent navigation retains another owners canonical global observer`() throws {
         let roster = Data(#"""
