@@ -301,9 +301,7 @@ export class SpawnBrokerHost {
     );
     const result =
       message.type === "spawn-execa" ? createDeferredCore<BrokerExecaResult>() : undefined;
-    if (result) {
-      void result.promise.catch(() => {});
-    }
+    void result?.promise.catch(() => {});
     const request: Request = {
       child,
       initiateSpawn,
@@ -406,9 +404,10 @@ export class SpawnBrokerHost {
         `exited with code=${child.exitCode ?? "null"} signal=${child.signalCode ?? "none"}${stderr ? `\nstderr:\n${stderr}` : ""}`,
       );
     };
-    // Exit can precede the last stderr bytes; record diagnostics only after the pipe closes.
+    let closingAtFailure = false;
+    // A crash can disconnect IPC before close() joins the later native exit and stderr.
     this.brokerClosed = waitForBrokerChildCompletion(child).then(() => {
-      if (this.closing && child.pid && (child.exitCode !== 0 || child.signalCode !== null)) {
+      if (closingAtFailure && child.pid && (child.exitCode !== 0 || child.signalCode !== null)) {
         this.cleanupErrors.push(
           new SpawnBrokerError("Spawn broker shutdown failed", { cause: exitError() }),
         );
@@ -433,6 +432,7 @@ export class SpawnBrokerHost {
       if (ended) {
         return;
       }
+      closingAtFailure = this.closing;
       ended = true;
       clearTimeout(startupTimer);
       this.markNativeReady = undefined;
