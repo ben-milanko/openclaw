@@ -472,10 +472,11 @@ function buildCronToolSchema(options?: CronToolSchemaOptions): TSchema {
       "includeDisabled",
       "jobId",
       "id",
-      ...(managementOnly ? [] : ["in", "runId"]),
+      "runId",
+      ...(managementOnly ? [] : ["in"]),
     ]);
   }
   return managementOnly
-    ? Type.Omit(schema, ["in", "text", "mode", "contextMessages", "sessionKey", "runId"])
+    ? Type.Omit(schema, ["in", "text", "mode", "contextMessages", "sessionKey"])
     : schema;
 }
