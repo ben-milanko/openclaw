@@ -267,7 +267,7 @@ struct ChatComposerStateTests {
         vm.input = "main draft"
 
         vm.switchSession(to: "other")
-        #expect(vm.input == "")
+        #expect(vm.input.isEmpty)
         vm.input = "other draft"
 
         vm.switchSession(to: "main")
