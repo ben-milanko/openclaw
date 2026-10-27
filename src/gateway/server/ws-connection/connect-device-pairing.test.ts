@@ -11,6 +11,7 @@ import type {
   UsersListResult,
   UsersSelfResult,
 } from "../../../../packages/gateway-protocol/src/schema/users.js";
+import { createDeferred } from "../../../../test/helpers/promise.js";
 import { replaceConfigFile } from "../../../config/config.js";
 import {
   getRuntimeConfigSnapshot,
@@ -19,7 +20,7 @@ import {
 import { upsertSessionEntryCore } from "../../../config/sessions/session-accessor.js";
 import type { GatewayAuthConfig } from "../../../config/types.gateway.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { readDeviceAuthTokenForTest } from "../../../infra/device-auth-store.test-support.js";
+import { loadDeviceAuthToken as readDeviceAuthTokenForTest } from "../../../infra/device-auth-store.js";
 import { issueDeviceBootstrapToken } from "../../../infra/device-bootstrap.js";
 import * as pairingApprovals from "../../../infra/device-pairing-approval.js";
 import { ensureDeviceToken } from "../../../infra/device-pairing-tokens.js";
@@ -552,10 +553,12 @@ describe("gateway connect pairing exemptions", () => {
         profileId: profile.id,
         displayName: "Ada Owner",
       });
-      const cachedToken = readDeviceAuthTokenForTest({
-        deviceId: loaded.identity.deviceId,
-        role: "operator",
-      })?.token;
+      const cachedToken = (
+        await readDeviceAuthTokenForTest({
+          deviceId: loaded.identity.deviceId,
+          role: "operator",
+        })
+      )?.token;
       expect(cachedToken).toBe(first.hello.auth.deviceToken);
       expect(cachedToken).toBeTruthy();
 
@@ -594,7 +597,7 @@ describe("gateway connect pairing exemptions", () => {
     }
   });
 
-  test.each(["automatic approval", "browser origin", "proxy policy"])(
+  test.each(["automatic approval", "browser origin", "proxy policy", "role policy"])(
     "keeps local pairing pending when %s is revoked before commit",
     async (revokedPolicy) => {
       const auth = { mode: "token", token: "local-pairing-policy-token" } as const;
@@ -633,7 +636,22 @@ describe("gateway connect pairing exemptions", () => {
                 ? { controlUi: { allowedOrigins: ["https://other.example.test"] } }
                 : revokedPolicy === "proxy policy"
                   ? { trustedProxies: ["192.0.2.10"] }
-                  : { nodes: { ...current.gateway?.nodes, pairing: { autoApproveLocal: false } } }),
+                  : revokedPolicy === "role policy"
+                    ? {
+                        roles: {
+                          default: "reader",
+                          definitions: {
+                            reader: {
+                              scopes: ["operator.read"],
+                              agents: [],
+                              sessions: { others: "none" },
+                            },
+                          },
+                        },
+                      }
+                    : {
+                        nodes: { ...current.gateway?.nodes, pairing: { autoApproveLocal: false } },
+                      }),
             },
           });
           return approve(requestId, options, baseDir);
@@ -750,10 +768,12 @@ describe("gateway connect pairing exemptions", () => {
         clearTimeout(provisionTimeout);
       }
       await provisionClient?.stopAndWait();
-      const deviceToken = readDeviceAuthTokenForTest({
-        deviceId: loaded.identity.deviceId,
-        role: "operator",
-      })?.token;
+      const deviceToken = (
+        await readDeviceAuthTokenForTest({
+          deviceId: loaded.identity.deviceId,
+          role: "operator",
+        })
+      )?.token;
       expect(deviceToken).toBe(
         (await getPairedDevice(loaded.identity.deviceId))?.tokens?.operator?.token,
       );
@@ -783,7 +803,8 @@ describe("gateway connect pairing exemptions", () => {
       });
       expect(connectAttempts).toHaveBeenCalledTimes(1);
       expect(
-        readDeviceAuthTokenForTest({ deviceId: loaded.identity.deviceId, role: "operator" })?.token,
+        (await readDeviceAuthTokenForTest({ deviceId: loaded.identity.deviceId, role: "operator" }))
+          ?.token,
       ).toBe(deviceToken);
     } finally {
       if (provisionTimeout) {
@@ -814,6 +835,13 @@ describe("gateway connect pairing exemptions", () => {
       const identityName = `auth-none-${name.replaceAll(" ", "-")}`;
       const loaded = loadDeviceIdentity(identityName);
       let pairedWs: Awaited<ReturnType<typeof openTrackedWs>> | undefined;
+      const metadataWritten = createDeferred();
+      const recordAccess = devicePairing.recordPairedDeviceAccess;
+      const metadata = vi
+        .spyOn(devicePairing, "recordPairedDeviceAccess")
+        .mockImplementation((...args) =>
+          recordAccess(...args).finally(() => metadataWritten.resolve()),
+        );
 
       try {
         const unpaired = await connectReq(started.ws, {
@@ -851,6 +879,7 @@ describe("gateway connect pairing exemptions", () => {
           prePairDevice: false,
         });
         expect(pairedConnect.ok, JSON.stringify(pairedConnect)).toBe(true);
+        await metadataWritten.promise;
 
         const paired = await getPairedDevice(loaded.identity.deviceId);
         expect(paired?.approvedScopes).toEqual(approvedScopes);
@@ -860,6 +889,7 @@ describe("gateway connect pairing exemptions", () => {
         });
         expect(paired?.lastSeenReason).toBe("connect");
       } finally {
+        metadata.mockRestore();
         pairedWs?.close();
         started.ws.close();
         await started.server.close();

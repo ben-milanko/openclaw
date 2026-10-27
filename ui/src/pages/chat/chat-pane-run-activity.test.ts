@@ -1,10 +1,10 @@
-/* @vitest-environment jsdom */
-
 import { expectDefined } from "@openclaw/normalization-core";
+/* @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../../api/types.ts";
 import { createApplicationContextProvider } from "../../test-helpers/application-context.ts";
+import { sessionListResult } from "../../test-helpers/chat-model.ts";
 import { sessionMutationGatewayHello } from "../../test-helpers/gateway-methods.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
 import {
@@ -21,13 +21,7 @@ import {
 } from "./components/chat-transcript.test-support.ts";
 
 function sessionsResult(rows: GatewaySessionRow[]): SessionsListResult {
-  return {
-    ts: 1,
-    path: "",
-    count: rows.length,
-    defaults: { modelProvider: null, model: null, contextTokens: null },
-    sessions: rows,
-  };
+  return sessionListResult(1, rows);
 }
 
 describe.each([false, true])("chat run activity (recovery ready: %s)", (recoveryScopeReady) => {
@@ -42,7 +36,7 @@ describe.each([false, true])("chat run activity (recovery ready: %s)", (recovery
       name: "shows a completed parent waiting on its child roster",
       selectedKey: "agent:main:main",
       parentActive: false,
-      // Recovery-ready panes wait for their own roster before showing child activity.
+      // Until its own child query answers, preserve the generic recovery status.
       expectWorking: recoveryScopeReady,
     },
     {
@@ -95,7 +89,7 @@ describe.each([false, true])("chat run activity (recovery ready: %s)", (recovery
     pane.render();
 
     const container = createApplicationContextProvider(context);
-    renderChatPropsInto(container, expectDefined(pane.chatProps, "chat props"));
+    renderChatPropsInto(container, expectDefined(pane.chatProps, "chat props"), context);
 
     expect(pane.chatProps?.canAbort).toBe(true);
     expect(
@@ -117,9 +111,9 @@ describe("composer run status", () => {
   });
 
   it.each(["editable", "view-only subagent", "read-only shared"] as const)(
-    "keeps %s child activity in the transcript through roster hydration and settlement",
+    "keeps %s child counts and the request timer through roster hydration and settlement",
     async (access) => {
-      vi.spyOn(Date, "now").mockReturnValue(66_000);
+      vi.spyOn(Date, "now").mockReturnValue(66_500);
       const parent: GatewaySessionRow = {
         key: access === "view-only subagent" ? "agent:main:subagent:parent" : "agent:main:parent",
         kind: "direct",
@@ -144,35 +138,39 @@ describe("composer run status", () => {
       state.sessionsResult = sessionsResult([parent]);
       pane.render();
       const container = createApplicationContextProvider(context);
-      const onOpenSubagent = vi.fn();
+      const onOpenSubagents = vi.fn();
       const draw = async (children: GatewaySessionRow[], hydrated = true) => {
-        renderChatPropsInto(container, {
-          ...expectDefined(pane.chatProps, "chat props"),
-          selectedSession: parent,
-          messages: [
-            { role: "user", content: "Implement the backend.", timestamp: 1_500 },
-            {
-              role: "assistant",
-              runId: "parent-run",
-              timestamp: 2_000,
-              content: [
-                { type: "text", text: "The backend work is delegated." },
-                { type: "toolCall", id: "yield", name: "sessions_yield", arguments: {} },
-              ],
-            },
-            {
-              role: "toolResult",
-              runId: "parent-run",
-              toolCallId: "yield",
-              toolName: "sessions_yield",
-              timestamp: 2_001,
-              content: [{ type: "text", text: '{"status":"yielded"}' }],
-            },
-          ],
-          subagentSessions: children,
-          subagentSessionsHydrated: hydrated,
-          onOpenSubagent,
-        });
+        renderChatPropsInto(
+          container,
+          {
+            ...expectDefined(pane.chatProps, "chat props"),
+            selectedSession: parent,
+            messages: [
+              { role: "user", content: "Implement the backend.", timestamp: 1_500 },
+              {
+                role: "assistant",
+                runId: "parent-run",
+                timestamp: 2_000,
+                content: [
+                  { type: "text", text: "The backend work is delegated." },
+                  { type: "toolCall", id: "yield", name: "sessions_yield", arguments: {} },
+                ],
+              },
+              {
+                role: "toolResult",
+                runId: "parent-run",
+                toolCallId: "yield",
+                toolName: "sessions_yield",
+                timestamp: 2_001,
+                content: [{ type: "text", text: '{"status":"yielded"}' }],
+              },
+            ],
+            subagentSessions: children,
+            subagentSessionsHydrated: hydrated,
+            onOpenSubagents,
+          },
+          context,
+        );
         flush();
         expect(container.querySelector(".agent-chat__composer-run-status")).toBeNull();
       };
@@ -181,6 +179,8 @@ describe("composer run status", () => {
         container.querySelector(".chat-working-indicator .chat-reading-indicator"),
       ).not.toBeNull();
       await draw([child]);
+      await vi.dynamicImportSettled();
+      flush();
       if (access === "view-only subagent") {
         expect(container.querySelector(".agent-chat__disabled-banner")?.textContent).toContain(
           "View-only subagent",
@@ -188,26 +188,33 @@ describe("composer run status", () => {
         expect(container.querySelector(".agent-chat__composer-combobox")).toBeNull();
       }
       expect(container.querySelector(".chat-working-indicator .chat-reading-indicator")).toBeNull();
-      const activity = container.querySelector(".chat-subagent-activity");
-      expect(activity?.textContent).toContain("Backend implementation");
-      expect(activity?.textContent).toContain("Running");
-      expect(activity?.querySelector(".chat-reading-indicator")).not.toBeNull();
-      activity?.querySelector<HTMLButtonElement>("button")?.click();
-      expect(onOpenSubagent).toHaveBeenCalledExactlyOnceWith(child.key);
-      const timer = container.querySelector(
-        ".chat-subagent-activity__elapsed openclaw-elapsed-time",
+      expect(container.querySelector(".chat-subagent-activity")).toBeNull();
+      expect(container.querySelector("openclaw-working-phrase")).toBeNull();
+      expect(container.textContent).not.toContain("Backend implementation");
+      const count = container.querySelector<HTMLButtonElement>(
+        ".chat-working-indicator__subagents",
       );
-      expect(timer).toHaveProperty("startMs", 1_500);
+      expect(count?.textContent).toBe("1 subagent running");
+      count?.click();
+      expect(onOpenSubagents).toHaveBeenCalledExactlyOnceWith();
+      const timer = container.querySelector(".chat-working-indicator openclaw-elapsed-time");
+      expect(timer?.textContent).toBe("1m 5s");
 
       await draw([
         child,
         { ...child, key: "agent:main:subagent:frontend", label: "Frontend implementation" },
       ]);
-      expect(container.querySelectorAll(".chat-subagent-activity [role=listitem]")).toHaveLength(2);
-      expect(container.querySelectorAll(".chat-subagent-activity__elapsed")).toHaveLength(1);
+      expect(container.querySelector(".chat-working-indicator__subagents")?.textContent).toBe(
+        "2 subagents running",
+      );
+      expect(
+        container.querySelectorAll(".chat-working-indicator openclaw-elapsed-time"),
+      ).toHaveLength(1);
+      expect(container.querySelector(".chat-subagent-activity")).toBeNull();
 
       await draw([{ ...child, hasActiveRun: false }]);
       expect(container.querySelector(".chat-subagent-activity")).toBeNull();
+      expect(container.querySelector(".chat-working-indicator__subagents")).toBeNull();
     },
   );
 

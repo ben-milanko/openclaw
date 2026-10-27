@@ -11,6 +11,7 @@ import { GitHubPublicationRequesterUnavailableError } from "./github-publication
 import { GitHubPublicationRecoveryPendingError } from "./github-publication-git-index.js";
 import { reconcileGitHubPublicationPullRequest } from "./github-publication-pull-requests.js";
 import { projectGitHubPublicationResult } from "./github-publication-receipt.js";
+import type { GitHubPublicationRecoveryBackoff } from "./github-publication-recovery.js";
 import { restoreGitHubPublicationRequester } from "./github-publication-requester.js";
 import {
   listRepositoryGitHubPublicationsAsync,
@@ -149,6 +150,7 @@ export async function settleDeniedRepositoryGitHubPublication(params: {
 
 export function createRepositoryGitHubPublicationRecovery(params: {
   placements: WorkerSessionPlacementStore;
+  recovery?: GitHubPublicationRecoveryBackoff;
   getCommittedRuntimeConfig: () => OpenClawConfig;
   isExecuting: (requestId: string) => boolean;
   assertCurrent: () => void;
@@ -233,14 +235,24 @@ export function createRepositoryGitHubPublicationRecovery(params: {
         }
       }
     },
-    async resumeSessionRequests(): Promise<void> {
+    async resumeSessionRequests(isStopping?: () => boolean): Promise<void> {
+      if (isStopping?.()) {
+        return;
+      }
       const failures: Error[] = [];
       const rows = await listRepositoryGitHubPublicationsAsync({
         ownerProfileId: null,
         pending: true,
       });
+      params.recovery?.retain(rows.map((row) => row.request_id));
+      if (isStopping?.()) {
+        return;
+      }
       const currentPlacements = await placements.getManyAsync(rows.map((row) => row.session_id));
       for (const row of rows) {
+        if (isStopping?.()) {
+          break;
+        }
         try {
           if (
             currentPlacements.get(row.session_id)?.turnClaim ||
@@ -251,16 +263,21 @@ export function createRepositoryGitHubPublicationRecovery(params: {
           await placements.withRepositoryWorkspaceReservation(
             { sessionId: row.session_id, sessionKey: row.session_key, agentId: row.agent_id },
             async (assertCurrent) => {
-              const preparedOwner = await prepareReceiptOwner(row);
-              using _ = { [Symbol.dispose]: () => preparedOwner.release() };
-              assertCurrent();
-              const owner = resolveReceiptOwner(row, preparedOwner);
-              if (!owner) {
-                // Keep the reservation through settlement; retirement needs only owner custody.
-                await failStaleRepositoryGitHubPublicationAsync(row, params.assertCurrent);
-                return;
-              }
-              await params.execute(row, assertCurrent);
+              const execute = async () => {
+                const preparedOwner = await prepareReceiptOwner(row);
+                using _ = { [Symbol.dispose]: () => preparedOwner.release() };
+                assertCurrent();
+                const owner = resolveReceiptOwner(row, preparedOwner);
+                if (!owner) {
+                  // Keep the reservation through settlement; retirement needs only owner custody.
+                  await failStaleRepositoryGitHubPublicationAsync(row, params.assertCurrent);
+                  return undefined;
+                }
+                return await params.execute(row, assertCurrent);
+              };
+              return params.recovery
+                ? await params.recovery.run(row.request_id, execute)
+                : await execute();
             },
           );
         } catch (error) {
@@ -337,7 +354,7 @@ async function readKnownRepositoryGitHubPublicationPullRequestUrls(
     },
     { current: true },
   );
-  if (!result?.ok || result.type !== "githubRepository.knownPullRequestUrls") {
+  if (!result) {
     throw new Error("GitHub repository publication receipt history is unavailable.");
   }
   return result.urls;
