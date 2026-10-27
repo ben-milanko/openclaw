@@ -1,4 +1,4 @@
-import { logCodeModeFailure } from "../logging/code-mode-diagnostic.js";
+import { codeModeGcAttribution, logCodeModeFailure } from "../logging/code-mode-diagnostic.js";
 import type { AgentRunApprovalWait } from "./agent-run-approval-wait.js";
 import { raceWithAbortSignal } from "./agent-tools.abort.js";
 import {
@@ -61,7 +61,7 @@ import {
   type CodeModeRunOwner,
 } from "./code-mode-state.js";
 import { recordCodeModeToolOutcome } from "./code-mode-tool-outcome.js";
-import { codeModeWaitRunUnavailableMessage } from "./code-mode-wait-errors.js";
+import { resolveCodeModeWaitRun } from "./code-mode-wait-errors.js";
 import type { AgentToolUpdateCallback } from "./runtime/index.js";
 import type { ToolResultBudget } from "./tool-result-limits.js";
 import { resolveCatalog } from "./tool-search-catalog.js";
@@ -281,6 +281,7 @@ function createInlineHost(
   onInputConsumed?: () => void,
 ): CodeModeExecutorInlineHost {
   return {
+    gcAttribution: codeModeGcAttribution(params.owner.runId, params.ctx.sessionKey),
     onWorkerAssigned: (workerId) => {
       params.bridgeDispatch.workerId = workerId;
     },
@@ -627,25 +628,7 @@ export async function runWait(params: {
   onRuntime?: (runtime: ToolSearchRuntime) => void;
 }) {
   removeExpiredRuns();
-  if (resumingRunIds.has(params.runId)) {
-    throw new ToolInputError(
-      "code mode run is already being resumed by another wait. Use that wait’s result before deciding the next step; do not issue another concurrent wait or replay earlier actions.",
-    );
-  }
-  const state = activeRuns.get(params.runId);
-  if (!state) {
-    throw new ToolInputError(codeModeWaitRunUnavailableMessage(params.ctx));
-  }
-  if (state.ctx.runId && state.ctx.runId !== params.ctx.runId) {
-    throw new ToolInputError("code mode run belongs to a different agent run.");
-  }
-  if (
-    (state.ctx.sessionId && state.ctx.sessionId !== params.ctx.sessionId) ||
-    (state.ctx.sessionKey && state.ctx.sessionKey !== params.ctx.sessionKey) ||
-    (state.ctx.agentId && state.ctx.agentId !== params.ctx.agentId)
-  ) {
-    throw new ToolInputError("code mode run belongs to a different session.");
-  }
+  const state = resolveCodeModeWaitRun(params.runId, params.ctx);
   params.onRuntime?.(state.runtime);
   resumingRunIds.add(state.runId);
   // One wait call shares a single monotonic deadline across draining the prior

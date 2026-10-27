@@ -179,7 +179,34 @@ final class RootSidebarModel {
     }
 
     private(set) var sessions: [OpenClawChatSessionEntry] = [] {
-        didSet { self.updateSnoozeWakeDeadline() }
+        didSet {
+            self.resolvedSessionKeys = [:]
+            self.updateSnoozeWakeDeadline()
+        }
+    }
+
+    /// The drawer asks for the selected and main keys once per row, and each answer scans the roster.
+    @ObservationIgnored private var resolvedSessionKeys: [[String?]: String] = [:]
+
+    func resolvedSessionKey(
+        current: String,
+        mainSessionKey: String,
+        activeAgentID: String?,
+        sessionRoutingContract: String?) -> String
+    {
+        let sessions = self.sessions
+        let inputs = [current, mainSessionKey, activeAgentID, sessionRoutingContract]
+        if let key = self.resolvedSessionKeys[inputs] { return key }
+        let key = ChatSessionSidebarModel.selectedSessionKey(
+            sessions: sessions,
+            currentSessionKey: current,
+            mainSessionKey: mainSessionKey,
+            activeAgentID: activeAgentID,
+            sessionRoutingContract: sessionRoutingContract)
+        // A disconnected roster can stay unchanged across many session switches.
+        if self.resolvedSessionKeys.count >= 32 { self.resolvedSessionKeys.removeAll(keepingCapacity: true) }
+        self.resolvedSessionKeys[inputs] = key
+        return key
     }
 
     private(set) var now: Date = .now
@@ -222,14 +249,25 @@ final class RootSidebarModel {
             mainSessionKey: mainSessionKey,
             activeAgentID: activeAgentID,
             sessionRoutingContract: sessionRoutingContract)
+        // Sidebar search and selection may reveal active automations, unlike
+        // the browser's Active scope. Archived and snoozed rows stay hidden.
+        let isActiveSession: (OpenClawChatSessionEntry) -> Bool = {
+            $0.archived != true && !$0.isSnoozed(at: now)
+        }
         let selectedSession = sessions.first { $0.key == selectedSessionKey }
-        let selectedIsHidden = selectedSession.map { !SessionStatusScope.active.includes($0, at: now) }
+        let selectedIsHidden = selectedSession.map { !isActiveSession($0) }
             ?? rosterIsComplete
+        // Resolve aliases before keeping the selected automation reachable.
+        let isSearching = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let browsingSessions = sessions.filter {
+            isActiveSession($0) &&
+                (isSearching || $0.key == selectedSessionKey ||
+                    !OpenClawChatSessionListVisibility.isAutomationSession($0))
+        }
         return ChatSessionSidebarModel.sections(
-            sessions: sessions.filter { SessionStatusScope.active.includes($0, at: now) },
-            // A complete active roster omits archived rows. Do not recreate them as
-            // selected placeholders; keep placeholders while cached or partial data catches up.
-            // New/switch selections trigger an immediate roster refresh in RootTabs.
+            sessions: browsingSessions,
+            // Do not recreate archived or snoozed selections as placeholders.
+            // Retain placeholders only while cached or partial data catches up.
             currentSessionKey: selectedIsHidden ? "" : currentSessionKey,
             mainSessionKey: mainSessionKey,
             activeAgentID: activeAgentID,
@@ -462,7 +500,7 @@ final class RootSidebarModel {
                 sessions.contains { $0.totalTokensFresh == false })
     }
 
-    private func applyRoster(_ roster: ChatSessionRosterSnapshot) {
+    func applyRoster(_ roster: ChatSessionRosterSnapshot) {
         self.sessions = roster.sessions
         self.isSessionRosterComplete = roster.isComplete
         guard !roster.isComplete, !roster.isCached else {

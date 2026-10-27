@@ -1,7 +1,11 @@
 import { expect, it, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
-import { mountMenu, selectMenuValue } from "../test-helpers/session-menu.ts";
-import "@awesome.me/webawesome/dist/styles/themes/default.css";
+import {
+  mountMenu,
+  openSubmenu,
+  selectMenuValue,
+  settleSessionMenu,
+} from "../test-helpers/session-menu.ts";
 import "../test-helpers/load-styles.ts";
 
 it("dispatches compact archive with the existing A shortcut", async () => {
@@ -31,7 +35,6 @@ it.each(["dispatch", "move", "retry"] as const)(
     menu.actionDisabledReasons = { "move-session": "Wait for the active turn to finish." };
     await menu.updateComplete;
     await expect.element(item).toBeDisabled();
-    expect(onAction).not.toHaveBeenCalled();
     menu.actionDisabledReasons = {};
     await menu.updateComplete;
     await item.click();
@@ -45,15 +48,28 @@ it("keeps compact custom snooze keyboard input inside its popover", async () => 
   await page.viewport(390, 844);
   const onAction = vi.fn();
   const menu = await mountMenu({ compact: true, snoozeAllowed: true, onAction });
-  selectMenuValue(menu, "compact:open-snooze");
+  await selectMenuValue(menu, "compact:open-snooze");
   await page.getByText("Choose another time", { exact: true }).click();
   const field = page.getByLabelText("Date and time", { exact: true });
-  const picker = page.elementLocator(
-    menu.querySelector<HTMLElement>(".session-menu__snooze-picker")!,
-  );
+  const picker = menu.querySelector<HTMLElement>(".session-menu__snooze-picker")!;
+  await expect.element(field).toHaveFocus();
+  const cancel = page.getByRole("button", { name: "Cancel", exact: true });
+  // Date/time segments and the native picker button precede the next form control.
+  for (let step = 0; step < 8 && document.activeElement !== cancel.element(); step += 1) {
+    await userEvent.tab();
+    expect(picker.contains(document.activeElement)).toBe(true);
+  }
+  await expect.element(cancel).toHaveFocus();
+  await userEvent.tab();
+  await expect.element(page.getByRole("button", { name: "Snooze", exact: true })).toHaveFocus();
+  await userEvent.tab();
+  await expect.element(field).toHaveFocus();
+  await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+  await expect.element(page.getByRole("button", { name: "Snooze", exact: true })).toHaveFocus();
+  await userEvent.tab();
   await expect.element(field).toHaveFocus();
   await userEvent.keyboard("{Escape}");
-  await expect.element(picker).not.toBeVisible();
+  await expect.poll(() => picker.checkVisibility({ checkVisibilityCSS: true })).toBe(false);
   await expect
     .element(page.getByRole("menuitem", { name: "Choose another time", exact: true }))
     .toHaveFocus();
@@ -65,5 +81,27 @@ it("keeps compact custom snooze keyboard input inside its popover", async () => 
     .toHaveTextContent("Choose a date and time in the future.");
   expect(onAction).not.toHaveBeenCalled();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect.element(picker).not.toBeVisible();
+  await expect.poll(() => picker.checkVisibility({ checkVisibilityCSS: true })).toBe(false);
+});
+
+it("recreates the custom snooze picker when the menu opens at another anchor", async () => {
+  const menu = await mountMenu({ snoozeAllowed: true });
+  const submenu = await openSubmenu(menu, "Snooze");
+  await page
+    .elementLocator(submenu)
+    .getByRole("menuitem", { name: "Choose another time", exact: true })
+    .click();
+  const field = page.elementLocator(menu).getByLabelText("Date and time", { exact: true });
+  await expect.element(field).toHaveFocus();
+  const previous = menu.querySelector(".session-menu__snooze-picker");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  menu.anchor = { x: 200, y: 150 };
+  await settleSessionMenu(menu);
+  const reopenedSubmenu = await openSubmenu(menu, "Snooze");
+  await page
+    .elementLocator(reopenedSubmenu)
+    .getByRole("menuitem", { name: "Choose another time", exact: true })
+    .click();
+  await expect.element(field).toHaveFocus();
+  expect(menu.querySelector(".session-menu__snooze-picker")).not.toBe(previous);
 });

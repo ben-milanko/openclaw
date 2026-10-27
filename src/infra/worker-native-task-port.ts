@@ -9,6 +9,7 @@ type TaskPortMessage = { type: "message"; value: unknown } | { type: "messageerr
 /** The task endpoint owns delivery only; its close never proves native execution stopped. */
 export class NativeWorkerTaskPort {
   private readonly pending: TaskPortMessage[] = [];
+  private readonly readMessage = () => receiveMessageOnPort(this.port);
   private started = false;
   private disposed = false;
   private portClosed = false;
@@ -78,9 +79,7 @@ export class NativeWorkerTaskPort {
         }
         let next: ReturnType<typeof receiveMessageOnPort>;
         try {
-          next = runWithMainThreadTask("worker:message-decode", () =>
-            receiveMessageOnPort(this.port),
-          );
+          next = runWithMainThreadTask("worker:message-decode", this.readMessage);
         } catch (error) {
           this.fail(toErrorObject(error, "Native worker task channel observation failed"));
           return;
@@ -129,10 +128,10 @@ export class NativeWorkerTaskPort {
     }
   }
 
-  postMessage(value: unknown, transferList: readonly Transferable[]): void {
+  postMessage(value: unknown, transferList: Transferable[]): void {
     this.assertAvailable();
     const bytes = workerMessagePayloadBytes(value);
-    this.port.postMessage(value, [...transferList]);
+    this.port.postMessage(value, transferList);
     observeWorkerMessage(value, "to_worker", "other", bytes ?? null);
   }
 

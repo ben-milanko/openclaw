@@ -86,7 +86,7 @@ Configuring a custom/local provider `baseUrl` is also the narrow network trust d
     `models.providers.*.request`: transport overrides for model-provider HTTP requests.
 
     - `request.headers`: extra headers (merged with provider defaults). Values accept SecretRef.
-    - `request.auth`: auth strategy override. Modes: `"provider-default"` (use provider's built-in auth), `"authorization-bearer"` (with `token`), `"header"` (with `headerName`, `value`, optional `prefix`).
+    - `request.auth`: auth strategy override. Modes: `"provider-default"` (use provider's built-in auth), `"authorization-bearer"` (with `token`), `"header"` (with `headerName`, `value`, optional `prefix`). An explicitly selected bearer/header override must resolve to a non-empty credential; an empty or unavailable credential is an error, not a request to fall back to provider defaults or send anonymously.
     - `request.proxy`: HTTP proxy override. Modes: `"env-proxy"` (use `HTTP_PROXY`/`HTTPS_PROXY` env vars), `"explicit-proxy"` (with `url`). Both modes accept an optional `tls` sub-object.
     - `request.tls`: TLS override for direct connections. Fields: `ca`, `cert`, `key`, `passphrase` (all accept SecretRef), `serverName`, `insecureSkipVerify`.
     - `request.allowPrivateNetwork`: when `true`, allow guarded model-provider HTTP and WebSocket requests to private, CGNAT, or similar ranges through the shared private-network policy. Custom/local provider base URLs already trust the exact configured origin, except metadata, link-local, and local-use NAT64 (`64:ff9b:1::/48`) origins, which remain blocked without explicit opt-in. Set this to `false` to opt out of exact-origin trust. Default `false`.
@@ -101,7 +101,7 @@ Configuring a custom/local provider `baseUrl` is also the narrow network trust d
 
     #### Custom provider capability declarations
 
-    Provider catalogs own `compat` for bundled and catalog-known model routes. Do not copy those flags into config: OpenClaw uses the catalog row when the configured `api` and `baseUrl` still identify that route. `openclaw doctor --fix` removes matching legacy overrides and reports divergent values for review.
+    Provider catalogs own `compat` defaults for bundled and catalog-known model routes. Explicit `supportsReasoningEffort`, `supportedReasoningEfforts`, and `reasoningEffortMap` declarations override catalog reasoning metadata on the same route. Other flags still use the catalog row when the configured `api` and `baseUrl` identify that route. `openclaw doctor --fix` removes matching legacy overrides and reports divergent values for review.
 
     A `compat` block remains supported for a genuinely custom provider, custom model, or catalog model routed to a different endpoint. Set only capabilities verified against that endpoint:
 
@@ -120,7 +120,7 @@ Configuring a custom/local provider `baseUrl` is also the narrow network trust d
     | `strictMessageKeys` | Requires outgoing messages to contain only accepted keys. |
     | `visibleReasoningDetailTypes` | Names reasoning detail block types safe to show in transcripts. |
     | `supportedReasoningEfforts` | Lists the endpoint's accepted reasoning labels. Requests are clamped to this ladder. Unknown models default to `low`, `medium`, and `high`. |
-    | `reasoningEffortMap` | Maps OpenClaw thinking labels to endpoint-specific labels. Custom Completions routes omit effort for `off` by default; an explicit off mapping can send the endpoint's accepted disable value. |
+    | `reasoningEffortMap` | Maps OpenClaw thinking labels to endpoint-specific labels. Unknown Completions and Responses routes omit effort for `off` by default; an explicit off mapping can send the endpoint's accepted disable value. |
     | `maxTokensField` | Selects `max_tokens` or `max_completion_tokens`. |
     | `thinkingFormat` | Selects the endpoint's reasoning payload dialect. |
     | `requiresToolResultName` | Requires a tool name on tool-result messages. |
