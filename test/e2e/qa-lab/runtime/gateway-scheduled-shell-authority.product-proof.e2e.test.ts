@@ -238,11 +238,15 @@ describe.skipIf(process.platform === "win32")(
         expect(job!.payload.toolsAllow).toEqual(["exec", "process"]);
         const pin = { version: 1, host: "gateway", ask: "always" };
         expect(storedJob(owner, job!.id).toolsAllowExecTarget).toEqual(pin);
+        console.info(
+          "[scheduled-shell-proof] built Gateway: public provider captured canonical exec/process; saved Gateway and always-ask pin verified",
+        );
         client.stop();
         await owner.stopGateway();
         await owner.startGateway();
         client = await connect(owner);
         expect(storedJob(owner, job!.id).toolsAllowExecTarget).toEqual(pin);
+        console.info("[scheduled-shell-proof] built Gateway: saved pin survived restart");
         const defaults = await client.request<{ hash: string; file: Record<string, unknown> }>(
           "exec.approvals.get",
           {},
@@ -289,6 +293,9 @@ describe.skipIf(process.platform === "win32")(
         ).toMatchObject({ status: "ok" });
         expect(await fs.readFile(controlMarker, "utf8")).toBe("");
         expect(await client.request("exec.approval.list", {})).toEqual([]);
+        console.info(
+          "[scheduled-shell-proof] built Gateway: unpinned full-permission control produced its real effect without approval under the same global policy",
+        );
         const markers: string[] = [];
         for (const [index, decision] of (["deny", "allow-once", "deny"] as const).entries()) {
           const marker = path.join(owner.state.workspaceDir, `scheduled-shell-marker-${index}`);
@@ -366,6 +373,9 @@ describe.skipIf(process.platform === "win32")(
           if (decision === "deny") {
             await absent(marker);
           }
+          console.info(
+            `[scheduled-shell-proof] built Gateway: scheduled occurrence ${index + 1} required Gateway approval; ${decision}; effect ${decision === "allow-once" ? "present" : "absent"}`,
+          );
         }
         await absent(markers[0]!);
         expect(await fs.readFile(markers[1]!, "utf8")).toBe("");
@@ -444,6 +454,9 @@ describe.skipIf(process.platform === "win32")(
           expect(await client.request("exec.approval.list", {})).toEqual([]);
           expect(storedJob(owner, job!.id).toolsAllowExecTarget).toEqual(pin);
           await absent(marker);
+          console.info(
+            `[scheduled-shell-proof] built Gateway: broader target ${index + 1} ${boundary.kind === "approval" ? "required Gateway approval and was denied" : "was rejected"}; saved pin retained; effect absent`,
+          );
         }
       },
     );

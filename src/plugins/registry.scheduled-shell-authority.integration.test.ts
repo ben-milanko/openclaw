@@ -1,7 +1,8 @@
-// Composed private-owner proof; the shipped saved-job path has a separate E2E.
-// The raw registrar is scoped exactly once. Public API root prewrap plus a
-// second scope currently stays literal-only; this matrix does not promote it.
+// Public root registration and the composed private invocation matrix prove
+// separate boundaries; the shipped saved-job path has its own E2E. Public root
+// registration plus another invocation view stays literal-only, not promoted.
 import fs from "node:fs/promises";
+import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
@@ -12,13 +13,18 @@ import { resolveAgentHarnessScheduledToolProjectionCapability } from "../agents/
 import { normalizeAgentRuntimeTools } from "../agents/runtime-plan/tools.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
 import { captureFinalEffectiveCronCreatorToolAllowlist } from "../agents/tools/cron-tool-creator-cap.js";
-import type { CronCreatorToolAllowlistEntry } from "../agents/tools/cron-tool.types.js";
+import { createCronTool } from "../agents/tools/cron-tool.js";
+import type {
+  CronCreatorToolAllowlistEntry,
+  CronToolsAllowCaptureRef,
+} from "../agents/tools/cron-tool.types.js";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../config/config.js";
 import type { OpenClawConfig } from "../config/types.js";
 import { resetAgentRunRegistryForTest } from "../infra/agent-run-registry.js";
 import { saveExecApprovals } from "../infra/exec-approvals-store.test-support.js";
 import { closeOpenClawAgentDatabasesAsync } from "../state/openclaw-agent-db.js";
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
+import { reserveTestPortListener } from "../test-utils/port-claims.js";
 import {
   getPluginInstance,
   getPluginOriginalValue,
@@ -171,9 +177,39 @@ function normalizer(foreignExecute?: AnyAgentTool["execute"]) {
   return { instance, view };
 }
 
-function capture(tools: AnyAgentTool[]) {
+function publicNormalizer(foreignExecute?: AnyAgentTool["execute"]) {
+  const builder = createTestPluginRegistry();
+  const record = createOwnershipRecord("public-scheduled-schema-owner");
+  const api = builder.createApi(record, { config });
+  api.registerProvider({
+    id: "public-scheduled-schema-provider",
+    label: "Public scheduled schema provider",
+    auth: [],
+    normalizeToolSchemas: ({ tools }) =>
+      tools.map((tool) => ({
+        ...tool,
+        description: "Publicly registered schema normalization",
+        ...(foreignExecute ? { execute: foreignExecute } : {}),
+      })),
+  });
+  const instance = expectDefined(getPluginInstance(record), "public provider owner");
+  instances.push(instance);
+  const provider = expectDefined(builder.registry.providers[0], "public provider").provider;
+  return {
+    instance,
+    normalize: (tools: AnyAgentTool[]) =>
+      normalizeAgentRuntimeTools({
+        provider: provider.id,
+        tools,
+        runtimeHandle: { provider: provider.id, plugin: provider },
+        allowProviderRuntimePluginLoad: false,
+      }),
+  };
+}
+
+function capture(tools: AnyAgentTool[], ref: CronToolsAllowCaptureRef = {}) {
   const cap: CronCreatorToolAllowlistEntry[] = [];
-  captureFinalEffectiveCronCreatorToolAllowlist(cap, {}, tools);
+  captureFinalEffectiveCronCreatorToolAllowlist(cap, ref, tools);
   return cap;
 }
 
@@ -203,14 +239,12 @@ describe.skipIf(process.platform === "win32")(
       );
       const provider = normalizer(foreignExec.execute);
       const normalized = provider.view(owner.aliases);
-      const marker = path.join(root, "foreign-marker");
       expect(capture(normalized.tools)).toEqual([
         { name: "gateway_exec" },
         { name: "gateway_process" },
       ]);
       // A literal separately authorized plugin tool is not a canonical shell grant.
       // Do not execute it and pretend canonical rejection revokes that other grant.
-      await absent(marker);
     });
 
     it.each(["host", "provider", "invocation"] as const)(
@@ -274,3 +308,96 @@ describe.skipIf(process.platform === "win32")(
     });
   },
 );
+
+describe.skipIf(process.platform === "win32")("public provider scheduled shell authority", () => {
+  it("rejects a foreign executor's canonical saved-job request before transport", async () => {
+    const owner = await shell("public-owner");
+    const foreign = await shell("public-foreign");
+    const foreignExec = expectDefined(
+      foreign.tools.find((tool) => tool.name === "exec"),
+      "real foreign exec",
+    );
+    const provider = publicNormalizer(foreignExec.execute);
+    const normalized = provider.normalize(owner.aliases);
+    const ref: CronToolsAllowCaptureRef = {};
+    const cap = capture(normalized, ref);
+    expect(cap).toEqual([{ name: "gateway_exec" }, { name: "gateway_process" }]);
+    let connections = 0;
+    const transport = await reserveTestPortListener({
+      offsets: [0],
+      createListener: () =>
+        createServer((socket) => {
+          connections += 1;
+          socket.destroy();
+        }),
+    });
+    try {
+      const cron = createCronTool({
+        config,
+        creatorToolAllowlist: cap,
+        creatorToolAllowlistCaptureRef: ref,
+      });
+      for (const name of ["exec", "process"]) {
+        await expect(
+          cron.execute(`foreign-canonical-${name}`, {
+            action: "add",
+            gatewayUrl: `ws://127.0.0.1:${transport.claim.port}`,
+            timeoutMs: 1_000,
+            job: {
+              name: "public canonical grant rejection",
+              enabled: false,
+              schedule: { kind: "every", everyMs: 86_400_000 },
+              sessionTarget: "isolated",
+              delivery: { mode: "none" },
+              payload: { kind: "agentTurn", message: "Synthetic fixture", toolsAllow: [name] },
+            },
+          }),
+        ).rejects.toThrow(`Requested automation tool "${name}" cannot be carried`);
+      }
+      expect(connections).toBe(0);
+      console.info(
+        "[scheduled-shell-proof] public registration: foreign exec/process canonical job requests rejected before transport",
+      );
+    } finally {
+      await transport.releaseListener();
+      await transport.claim.release();
+    }
+  });
+
+  it.each(["host", "provider"] as const)(
+    "rejects a new grant and retained real execution after the public %s owner closes",
+    async (kind) => {
+      const owner = await shell(`public-${kind}`);
+      const provider = publicNormalizer();
+      const normalized = provider.normalize(owner.aliases);
+      expect(capture(normalized)).toEqual(canonical);
+      const exec = expectDefined(normalized[0], "public normalized exec");
+      const liveMarker = path.join(root, `public-${kind}-live-marker`);
+      const live = await exec.execute(`public-${kind}-live`, {
+        command: `touch ${JSON.stringify(liveMarker)}`,
+        workdir: root,
+        timeoutSeconds: 5,
+      });
+      expect(live.details).toMatchObject({ status: "completed", exitCode: 0 });
+      expect(await fs.readFile(liveMarker, "utf8")).toBe("");
+      if (kind === "host") {
+        owner.host.closeHost();
+      } else {
+        await provider.instance.dispose();
+      }
+      const reason = /closed|no longer active|reloaded or disabled/i;
+      expect(() => capture(normalized)).toThrow(reason);
+      const closedMarker = path.join(root, `public-${kind}-closed-marker`);
+      await expect(async () =>
+        exec.execute(`public-${kind}-closed`, {
+          command: `touch ${JSON.stringify(closedMarker)}`,
+          workdir: root,
+        }),
+      ).rejects.toThrow(reason);
+      await absent(closedMarker);
+      console.info(
+        `[scheduled-shell-proof] public registration: live shell effect observed; ${kind} closure rejects capture and retained execution; new effect absent`,
+      );
+    },
+  );
+});
