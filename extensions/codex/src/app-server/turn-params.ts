@@ -260,6 +260,7 @@ export function buildCodexParentLocalInstructions(
   } = {},
 ): string | null {
   const contextInstructions = joinPresentSections(
+    params.extraSystemPrompt,
     options.personaInstructions,
     options.skillsInstructions,
     options.memoryInstructions,

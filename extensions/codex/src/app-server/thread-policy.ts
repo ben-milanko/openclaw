@@ -69,7 +69,7 @@ export async function refreshCodexThreadPolicy(
 }
 
 /**
- * Refreshes skills, persona, and memory instructions on a live thread whose generic policy cannot
+ * Refreshes turn context, skills, persona, and memory on a live thread whose generic policy cannot
  * change (ephemeral threads have no resume source). The refresh is a client-authored
  * developer message, so it must be re-delivered after every compaction.
  */
@@ -77,11 +77,11 @@ export async function refreshCodexThreadInstructions(
   params: CodexThreadHandoffParams & { refreshableInstructions: string | undefined },
 ): Promise<void> {
   const notice =
-    "The following is the complete current OpenClaw refreshable thread instructions. It replaces earlier OpenClaw-supplied skills, persona, and memory instructions in this conversation.\n\n";
+    "The following is the complete current OpenClaw refreshable thread instructions. It replaces earlier OpenClaw-supplied turn context, skills, persona, and memory instructions in this conversation.\n\n";
   const text =
     notice +
     (params.refreshableInstructions ??
-      "The current OpenClaw refreshable thread instructions are empty; earlier OpenClaw-supplied skills, persona, and memory instructions are withdrawn.");
+      "The current OpenClaw refreshable thread instructions are empty; earlier OpenClaw-supplied turn context, skills, persona, and memory instructions are withdrawn.");
   await injectCodexThreadDeveloperHandoff(params, text);
 }
 
