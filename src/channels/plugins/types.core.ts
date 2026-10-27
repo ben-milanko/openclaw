@@ -437,6 +437,8 @@ export type ChannelThreadingToolContext = {
 
 /** Channel-owned messaging helpers for target parsing, routing, and payload shaping. */
 export type ChannelMessagingAdapter = {
+  /** Whether unsolicited runtime recovery notices may be delivered on this account. */
+  allowRecoveryNotice?: (params: { cfg: OpenClawConfig; accountId?: string }) => boolean;
   /**
    * Provider prefixes accepted in explicit targets, including aliases not used
    * as channel-selection aliases. Core uses these to reject cross-channel

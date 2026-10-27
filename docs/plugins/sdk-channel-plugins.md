@@ -968,6 +968,25 @@ declare only the covered actions, and load the updated registration. Existing
 direct-operator and interactive actions retain their admission rules. Upgrading
 the plugin does not grant additional authority to an existing job.
 
+## Optional source replies
+
+A channel with an explicit silent-response policy can set
+`SourceReplyExpectation: "optional"` in its trusted inbound `MsgContext`
+(for example, through `buildChannelInboundEventContext` extra fields). This
+permits intentional silence for addressed requests and DMs without a visible-answer
+retry. Do not derive this field from user-supplied metadata. It does not change
+sender authorization, tool access, or delivery routing. Omit it to retain normal
+reply-requiredness rules.
+
+To keep automatic failures local, also use the turn dispatcher’s `beforeDeliver`
+hook to return `null` for error payloads. The hook runs before direct delivery or
+durable queue admission. Optional reply expectation alone does not suppress
+curated error guidance or failures after visible work. Previously queued deliveries
+need separate reconciliation. For recovery notices that bypass turn dispatch,
+`messaging.allowRecoveryNotice({ cfg, accountId })` can return `false`. The Gateway
+checks this account policy before queue admission and again before the provider
+send. Omitting the callback preserves existing recovery behavior.
+
 ## Advanced topics
 
 <CardGroup cols={2}>

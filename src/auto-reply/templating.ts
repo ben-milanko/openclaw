@@ -116,6 +116,9 @@ export type CanonicalInboundText = {
 export type MsgContext = Partial<CanonicalInboundText> & {
   Body?: string;
   InboundEventKind?: InboundEventKind;
+  /** Trusted channel admission policy, never inferred from message text.
+   * Optional permits intentional silence even in addressed requests or DMs. */
+  SourceReplyExpectation?: "optional";
   /**
    * Agent prompt body (may include envelope/history/context). Prefer this for prompt shaping.
    * Should use real newlines (`\n`), not escaped `\\n`.

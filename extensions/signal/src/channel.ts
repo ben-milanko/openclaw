@@ -414,6 +414,8 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
         },
       },
       messaging: {
+        allowRecoveryNotice: ({ cfg, accountId }) =>
+          resolveSignalAccount({ cfg, accountId }).config.assistantRequestPrefixes === undefined,
         targetPrefixes: ["signal"],
         normalizeTarget: normalizeSignalMessagingTarget,
         inferTargetChatType: ({ to }) => inferSignalTargetChatType(to),

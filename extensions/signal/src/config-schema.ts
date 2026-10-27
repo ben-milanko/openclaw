@@ -126,6 +126,7 @@ const SignalAccountSchemaBase = z
     account: z.string().optional(),
     accountUuid: z.string().optional(),
     transport: SignalTransportSchema.optional(),
+    assistantRequestPrefixes: z.array(z.string().trim().min(2).regex(/[:,]$/u)).optional(),
     ignoreAttachments: z.boolean().optional(),
     sendReadReceipts: ChannelSendReadReceiptsSchema,
     aliases: z.record(z.string(), z.string()).optional(),
