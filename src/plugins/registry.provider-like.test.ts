@@ -352,6 +352,7 @@ describe("provider schema cleanup scheduled authority", () => {
           {
             name: "exec",
             aliasName: "gateway_exec",
+            execOrigin: "openclaw",
             execTarget: { host: "gateway", ask: "always" },
           },
           { name: "process", aliasName: "gateway_process" },
