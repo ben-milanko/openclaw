@@ -745,6 +745,9 @@ extension OpenClawChatView {
         showsActions: Bool = true) -> some View
     {
         let isUser = msg.role.lowercased() == "user"
+        let mediaTarget = self.viewModel.currentSessionTarget
+        let mediaTransport = self.viewModel.transport
+        let mediaAllowed = self.mediaPlaybackAllowed
         let bubble = ChatMessageBubble(
             message: msg,
             liveToolCalls: self.viewModel.toolActivities.filter {
@@ -782,27 +785,19 @@ extension OpenClawChatView {
             mediaArtifactResolverReady: self.viewModel.healthOK,
             mediaPlaybackScope: ChatMediaAudioPlaybackScope(
                 ownerID: self.viewModel.mediaPlaybackOwnerID,
-                sessionTarget: self.viewModel.currentSessionTarget),
-            mediaPlaybackAllowed: { [
-                weak viewModel,
-                target = self.viewModel.currentSessionTarget,
-                allowed = self.mediaPlaybackAllowed,
-            ] in
+                sessionTarget: mediaTarget),
+            mediaPlaybackAllowed: { [weak viewModel] in
                 guard let viewModel, !viewModel.isTransportDetached,
-                      viewModel.currentSessionTarget == target
+                      viewModel.currentSessionTarget == mediaTarget
                 else { return false }
-                return allowed()
+                return mediaAllowed()
             },
-            loadMediaArtifact: { [
-                weak viewModel,
-                target = self.viewModel.currentSessionTarget,
-                transport = self.viewModel.transport,
-            ] artifactId, kind, playback in
+            loadMediaArtifact: { [weak viewModel] artifactId, kind, playback in
                 guard let viewModel, !viewModel.isTransportDetached,
-                      viewModel.currentSessionTarget == target
+                      viewModel.currentSessionTarget == mediaTarget
                 else { return nil }
-                return try await transport.loadMediaArtifact(
-                    sessionKey: target.sessionKey,
+                return try await mediaTransport.loadMediaArtifact(
+                    sessionKey: mediaTarget.sessionKey,
                     artifactId: artifactId,
                     kind: kind,
                     playback: playback)
