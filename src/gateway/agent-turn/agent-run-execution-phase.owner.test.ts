@@ -19,6 +19,11 @@ import { retainRuntimePluginWork } from "../../agents/runtime-plugin-work.js";
 import * as runtimePlugins from "../../agents/runtime-plugins.js";
 import { SessionFollowupCompletion } from "../../agents/subagents/completion/session-followup-completion.js";
 import {
+  captureGatewayToolCallerAssertion,
+  getGatewayToolCallerIdentity,
+  withGatewayToolCallerIdentity,
+} from "../../agents/tools/gateway-caller-context.js";
+import {
   createPluginMetadataSnapshot,
   makeRegistry,
 } from "../../config/plugin-auto-enable.test-helpers.js";
@@ -53,6 +58,7 @@ import { replayAgentTurnIfCached } from "./agent-dedupe.js";
 import { resolveAgentDeliveryPhase } from "./agent-delivery-phase.js";
 import * as agentHandlerHelpers from "./agent-handler-helpers.js";
 import { startAgentRunExecution } from "./agent-run-execution-phase.js";
+import { createExecution } from "./agent-run-execution-phase.test-support.js";
 import type { AgentTurnPrincipal } from "./types.js";
 
 const { dispatchAgentRunFromGateway, agentCommand } = vi.hoisted(() => ({
@@ -67,96 +73,6 @@ vi.mock("../../commands/agent.js", () => ({
 vi.mock("./agent-run-dispatch.js", () => ({
   dispatchAgentRunFromGateway,
 }));
-
-function createExecution(
-  options: {
-    aborted?: boolean;
-    assertContextCurrent?: () => void;
-    pendingInputSettlement?: () => Promise<void>;
-  } = {},
-) {
-  const abortCleanup = vi.fn();
-  const gatewayRelease = vi.fn();
-  const callerRelease = vi.fn();
-  const { promise: runtimeReleased, resolve: resolveRuntimeReleased } = createDeferred();
-  const runtimeRelease = vi.fn(async () => resolveRuntimeReleased());
-  const controller = new AbortController();
-  if (options.aborted) {
-    controller.abort();
-  }
-  return {
-    abortCleanup,
-    gatewayRelease,
-    callerRelease,
-    runtimeRelease,
-    runtimeReleased,
-    params: {
-      assertContextCurrent: options.assertContextCurrent,
-      prepared: {
-        releaseCallerAuthority: callerRelease,
-        activeGatewayWorkAdmission: {
-          release: gatewayRelease,
-          run: async (run: () => Promise<void>) => await run(),
-        },
-        activeRunAbort: {
-          cleanup: abortCleanup,
-          controller,
-          registered: false,
-        },
-        effectiveAllowModelOverride: false,
-        lifecycleStorePath: "",
-        operationalRunInstance: {},
-        preparedModelRuntimeLease: { [Symbol.asyncDispose]: runtimeRelease, snapshot: {} },
-        replyDispatchRuntime: {
-          config: { runtime: "A" },
-          pluginGeneration: "generation-A",
-        },
-        unpersistedOffloadedRefs: [],
-        userTurn: {
-          recorder: options.pendingInputSettlement
-            ? { waitForPendingInputSettlement: options.pendingInputSettlement }
-            : undefined,
-          execApprovalFollowupHandoffClaimId: "claim",
-          message: "continue",
-          senderIsOwner: false,
-          suppressPromptPersistence: false,
-        },
-        workspaceOverride: "/workspace/A",
-      },
-      request: {},
-      cfg: {},
-      activeSessionAgentId: "main",
-      delivery: {},
-      isNewSession: false,
-      isRawModelRun: true,
-      isOneShotModelRun: true,
-      isRestartRecoveryResumeRun: false,
-      suppressVisibleSessionEffects: true,
-      images: [],
-      imageOrder: [],
-      media: [],
-      runId: "owner-test",
-      agentDedupeKeys: [],
-      bestEffortDeliver: false,
-      lifecycleGeneration: "test",
-      preserveUserFacingSessionModelState: false,
-      skipAgentInitialSessionTouch: true,
-      canUseInternalRuntimeHandoff: false,
-      client: null,
-      context: {
-        getSessionEventSubscriberConnIds: () => new Set(),
-        dedupe: new Map(),
-        deps: {},
-        logGateway: { error: vi.fn(), warn: vi.fn() },
-      },
-      io: {
-        emitAcceptance: vi.fn(),
-        emitFinal: vi.fn(),
-      },
-      releaseCronContinuationClaimWithRecovery: async () => true,
-    } as unknown as Parameters<typeof startAgentRunExecution>[0],
-  };
-}
 
 function createVisibleExecution() {
   const execution = createExecution();
@@ -253,6 +169,80 @@ describe("startAgentRunExecution Gateway ownership", () => {
     dispatchAgentRunFromGateway.mockReset();
     agentCommand.mockReset();
   });
+
+  it("starts accepted work without retaining its retired launching tool caller", async () => {
+    const execution = createExecution();
+    let parentActive = true;
+    const acceptedYield = vi
+      .spyOn(agentHandlerHelpers, "yieldAfterAgentAcceptedAck")
+      .mockImplementation(async () => {
+        parentActive = false;
+      });
+    dispatchAgentRunFromGateway.mockImplementationOnce(async (dispatch) => {
+      // Startup/preflight must not capture the launching turn's tool assertion.
+      captureGatewayToolCallerAssertion()?.();
+      expect(getGatewayToolCallerIdentity()).toBeUndefined();
+      expect(captureGatewayToolCallerAssertion()).toBeUndefined();
+      await dispatch.cleanupAbortController();
+    });
+    try {
+      await withGatewayToolCallerIdentity(
+        {
+          agentId: "main",
+          sessionKey: "agent:main:launcher",
+          operationalRunInstance: createOperationalRunInstanceRef("launcher"),
+          receiptAuthority: () => parentActive,
+        },
+        async () => {
+          const assertParentCurrent = expectDefined(
+            captureGatewayToolCallerAssertion(),
+            "launching caller assertion",
+          );
+          assertParentCurrent();
+          await startAgentRunExecution(execution.params);
+          expect(() => assertParentCurrent()).toThrow("agent tool caller authority");
+        },
+      );
+      expect(dispatchAgentRunFromGateway).toHaveBeenCalledOnce();
+      expect(execution.params.io.emitFinal).not.toHaveBeenCalled();
+      expect(execution.runtimeRelease).toHaveBeenCalledOnce();
+    } finally {
+      acceptedYield.mockRestore();
+    }
+  });
+
+  it.each(["context", "abort"] as const)(
+    "keeps the accepted run's own %s fence after clearing the launching caller",
+    async (revocation) => {
+      let contextActive = true;
+      const execution = createExecution({
+        assertContextCurrent: () => {
+          if (!contextActive) {
+            throw new Error("Accepted run context retired");
+          }
+        },
+      });
+      execution.params.lifecycleGeneration = getAgentEventLifecycleGeneration();
+      dispatchAgentRunFromGateway.mockImplementationOnce(async (dispatch) => {
+        dispatch.assertCurrent();
+        if (revocation === "context") {
+          contextActive = false;
+        } else {
+          execution.params.prepared.activeRunAbort.controller.abort(
+            new Error("Accepted run aborted"),
+          );
+        }
+        expect(() => dispatch.assertCurrent()).toThrow(
+          revocation === "context" ? "Accepted run context retired" : "Accepted run aborted",
+        );
+        contextActive = true;
+        await dispatch.cleanupAbortController();
+      });
+      await startAgentRunExecution(execution.params);
+      expect(dispatchAgentRunFromGateway).toHaveBeenCalledOnce();
+      expect(execution.params.io.emitFinal).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(["success", "startup failure", "cleanup failure", "completed cleanup failure"] as const)(
     "retains raw disposal after its real terminal producer settles %s",
