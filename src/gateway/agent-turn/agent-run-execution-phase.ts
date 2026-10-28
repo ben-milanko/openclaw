@@ -21,6 +21,7 @@ import {
 import { withPreparedModelRuntimePluginGenerationScope } from "../../agents/prepared-model-runtime-generation-scope.js";
 import { resolveScheduledToolPolicyContext } from "../../agents/scheduled-tool-policy.js";
 import { resolveIngressWorkspaceOverrideForSessionRun } from "../../agents/spawned-context.js";
+import { withoutGatewayToolCallerIdentity } from "../../agents/tools/gateway-caller-context.js";
 import { runWithAgentWorkspaceReadiness } from "../../agents/workspace-readiness.js";
 import { isExecutionIdentityCollectionEnabled } from "../../audit/audit-config.js";
 import {
@@ -71,11 +72,15 @@ import {
 } from "./agent-run-user-turn.js";
 
 export async function startAgentRunExecution(params: StartAgentRunExecutionParams): Promise<void> {
-  // Autonomous turns prepare their own workspace and cannot borrow a previous chat run's gate.
-  return await runWithChatAbortExecution(
-    params.prepared.activeRunAbort.entry,
-    () => runWithAgentWorkspaceReadiness(undefined, () => executeAgentRun(params)),
-    params.prepared.activeRunAbort.cleanup,
+  // Accepted work owns its run authority; startup/compaction must not capture the
+  // launching tool's ambient caller, which retires independently of this run.
+  return await withoutGatewayToolCallerIdentity(() =>
+    runWithChatAbortExecution(
+      params.prepared.activeRunAbort.entry,
+      // Autonomous turns also prepare their own workspace, not the caller's gate.
+      () => runWithAgentWorkspaceReadiness(undefined, () => executeAgentRun(params)),
+      params.prepared.activeRunAbort.cleanup,
+    ),
   );
 }
 
@@ -101,10 +106,8 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
     let replyDispatchRuntime = prepared.replyDispatchRuntime;
     let workspaceOverride = prepared.workspaceOverride;
     let leaseActive = true;
-    const abortRegistration = prepared.activeRunAbort;
-    const abortEntry = abortRegistration.entry;
-    const abortController = abortRegistration.controller;
-    const operationalRunInstance = prepared.operationalRunInstance;
+    const { activeRunAbort: abortRegistration, operationalRunInstance } = prepared;
+    const { entry: abortEntry, controller: abortController } = abortRegistration;
     const sessionKey = abortEntry?.sessionKey;
     const admittedRunIdentity = abortEntry
       ? {
@@ -300,9 +303,7 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
           });
         }
 
-        let message = prepared.userTurn.message;
-        let execApprovalContinuationPromptRange =
-          prepared.userTurn.execApprovalContinuationPromptRange;
+        let { message, execApprovalContinuationPromptRange } = prepared.userTurn;
         const execApprovalContinuationTranscriptPromptRange = execApprovalContinuationPromptRange;
 
         // Admission owns plugin/settlement adoption; other inter-session work
