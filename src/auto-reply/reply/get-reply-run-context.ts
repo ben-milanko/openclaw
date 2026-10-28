@@ -202,7 +202,10 @@ export async function prepareReplyRunContext(params: RunPreparedReplyParams) {
     buildSourceConversationContext({
       sourceReplyDeliveryMode: mode,
       sessionCtx: promptSessionCtx,
-      silentReplyPolicy: silentReplySettings.policy,
+      silentReplyPolicy:
+        promptSessionCtx.SourceReplyExpectation === "optional"
+          ? "allow"
+          : silentReplySettings.policy,
       silentToken: SILENT_REPLY_TOKEN,
     });
   const sourceConversationContextByMode = {

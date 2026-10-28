@@ -30,6 +30,7 @@ export type SourceReplyDeliveryModeContext = Pick<
   | "BotUsername"
   | "WasMentioned"
   | "InputProvenance"
+  | "SourceReplyExpectation"
 >;
 
 export function isUnauthorizedTextSlashCommand(ctx: SourceReplyDeliveryModeContext): boolean {
@@ -96,6 +97,9 @@ export function resolveSourceReplyExpectation(params: {
   cfg: OpenClawConfig;
   isHeartbeat?: boolean;
 }): ReplyExpectation {
+  if (params.ctx.SourceReplyExpectation === "optional") {
+    return "optional";
+  }
   if (
     isSyntheticSourceReplyTurn({
       inputProvenance: params.ctx.InputProvenance,
