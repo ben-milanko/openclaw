@@ -1,4 +1,5 @@
 import path from "node:path";
+import { withNodeRuntimePath } from "../../../node-runtime-env.mjs";
 import { theme } from "../../../packages/terminal-core/src/theme.js";
 import { resolveStateDir } from "../../config/paths.js";
 import { isBunRuntime } from "../../daemon/runtime-binary.js";
@@ -132,6 +133,19 @@ export async function resolveUpdateCommandTarget(
           recordUpdateCommandTarget(opts.run, { step });
         }
       };
+      const recordNodeSecurityWarning = (warning: string) => {
+        recordPreflightStep({
+          name: "node-security-patch",
+          command: "inspect Node.js security patch level",
+          cwd: root,
+          durationMs: 0,
+          exitCode: 0,
+          warnings: [warning],
+        });
+      };
+      if (prepared.nodeSecurityWarning) {
+        recordNodeSecurityWarning(prepared.nodeSecurityWarning);
+      }
       const resolveMode = async (): Promise<UpdateRunResult["mode"]> => {
         // Policy/config refusals can precede target preparation. Inspect their owner too.
         return updateInstallKind === "git"
@@ -209,6 +223,7 @@ export async function resolveUpdateCommandTarget(
       const readChannelConfig = () =>
         readUpdateChannelConfig(Boolean(opts.channel), {
           tolerateReadFailure: usesCandidateUpdateAdmission(opts, installKind),
+          dryRun: opts.dryRun,
         });
       let channelConfig: Awaited<ReturnType<typeof readUpdateChannelConfig>>;
       let inspectionWarning: string | undefined;
@@ -446,6 +461,10 @@ export async function resolveUpdateCommandTarget(
           pkgOwnership,
         });
         packageInstallEnv = await createGlobalInstallEnv(undefined, packageInstallTarget);
+        if (packageUpdateNodeRunner) {
+          // Candidate staging runs npm lifecycle scripts before the runtime preflight rebinds PATH.
+          packageInstallEnv = withNodeRuntimePath(packageInstallEnv, packageUpdateNodeRunner);
+        }
         if (packageInstallTarget.manager === "npm") {
           const destination = await inspectNpmGlobalDestination(root, packageInstallTarget);
           if (destination.kind !== "owned" && destination.kind !== "empty") {
@@ -615,6 +634,13 @@ export async function resolveUpdateCommandTarget(
             runtime.recoverySteps,
           );
           return undefined;
+        }
+        if (
+          runtime.value.nodeSecurityWarning &&
+          runtime.value.nodeSecurityWarning !== prepared.nodeSecurityWarning
+        ) {
+          warn(`SECURITY WARNING: ${runtime.value.nodeSecurityWarning}`);
+          recordNodeSecurityWarning(runtime.value.nodeSecurityWarning);
         }
       }
 
