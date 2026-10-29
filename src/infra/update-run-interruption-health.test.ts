@@ -178,6 +178,28 @@ it.each(["wait", "http", "generation", "installed"])(
   },
 );
 
+it.each([
+  { stage: "health wait", identity: "wrong version", patch: { gatewayVersion: "0.9.0" } },
+  { stage: "health wait", identity: "missing version", patch: { gatewayVersion: undefined } },
+  { stage: "health wait", identity: "wrong build", patch: { gatewayBuildId: "other-build" } },
+  { stage: "health wait", identity: "missing build", patch: { gatewayBuildId: undefined } },
+  { stage: "final inspection", identity: "wrong version", patch: { gatewayVersion: "0.9.0" } },
+  { stage: "final inspection", identity: "wrong build", patch: { gatewayBuildId: "other-build" } },
+])("rejects healthy $stage evidence with $identity", async ({ stage, patch }) => {
+  const mismatched = { ...healthy, ...patch };
+  if (stage === "health wait") {
+    probes.wait.mockResolvedValue(mismatched);
+  } else {
+    probes.inspect.mockResolvedValueOnce(healthy).mockResolvedValueOnce(mismatched);
+  }
+  const result = await observe();
+  expect(result).toMatchObject({ outcome: "unverified", waitOutcome: "healthy" });
+  expect(result.verification).toBeUndefined();
+  if (stage === "health wait") {
+    expect(probes.http).not.toHaveBeenCalled();
+  }
+});
+
 it("preserves command cleanup uncertainty for the reconciliation owner", async () => {
   const failure = new CommandProcessCleanupError();
   probes.wait.mockRejectedValue(failure);
