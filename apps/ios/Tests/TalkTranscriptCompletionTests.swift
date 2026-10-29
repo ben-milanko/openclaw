@@ -168,6 +168,8 @@ private final class TranscriptSpeechSynthesizer: TalkGatewaySpeechSynthesizing {
 private final class TranscriptAudioPlayer: TalkBufferedAudioPlaying {
     private(set) var payloads: [Data] = []
 
+    func setLevelHandler(_: (@MainActor (Double?) -> Void)?) {}
+
     func play(data: Data) async -> StreamingPlaybackResult {
         self.payloads.append(data)
         return StreamingPlaybackResult(finished: true, interruptedAt: nil)

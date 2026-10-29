@@ -1,4 +1,5 @@
 import { cloneEnvWithPlatformSemantics } from "../config/config-env-vars.js";
+import { getAsyncWorkSignal } from "../shared/async-work-scope.js";
 import {
   executeExistingOpenClawStateRead,
   withArtifactPreservingStateReads,
@@ -8,6 +9,7 @@ import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worke
 import { runOpenClawStateWorkerOperation } from "../state/openclaw-state-worker-store.js";
 import { formatErrorMessage } from "./errors.js";
 import { createSqliteWorkerWriteAdmission } from "./sqlite-worker-store.js";
+import { cleanupTerminatedHandoffStage } from "./update-handoff-recovery.js";
 import type { UpdateRunLedgerOptions } from "./update-run-codec.js";
 import { canReconcileUpdateRunCandidates } from "./update-run-read.kernel.js";
 import type {
@@ -19,11 +21,14 @@ import type { UpdateRunRecord } from "./update-run-record.js";
 
 type ReconciliationOptions = UpdateRunLedgerOptions & {
   signal?: AbortSignal;
+  /** Relocation-capable callers must not retain readers on the live database. */
+  snapshot?: true;
 };
 
 function prepareReconciliation(options: ReconciliationOptions) {
   const captured = {
     ...options,
+    signal: options.signal ?? getAsyncWorkSignal(),
     env: cloneEnvWithPlatformSemantics(options.env ?? process.env),
     ...(options.redactPaths ? { redactPaths: [...options.redactPaths] } : {}),
   };
@@ -43,7 +48,7 @@ function prepareReconciliation(options: ReconciliationOptions) {
         executeExistingOpenClawStateRead(captured, command, {
           context,
           signal: captured.signal,
-          preferIndependentWarmRead: true,
+          preferIndependentWarmRead: captured.snapshot ? undefined : true,
         }),
       );
       assertCurrent();
@@ -84,6 +89,7 @@ async function reconcileCandidates(
       }),
     {
       existingOnly: true,
+      signal: options.signal,
       assertCurrent,
       createAdmission: createSqliteWorkerWriteAdmission(assertCurrent, [
         context.admission.databasePath,
@@ -92,6 +98,9 @@ async function reconcileCandidates(
   );
   if (!result) {
     throw new Error("Update history disappeared before reconciliation");
+  }
+  for (const run of result.reconciled) {
+    await cleanupTerminatedHandoffStage(run, options);
   }
   return result;
 }

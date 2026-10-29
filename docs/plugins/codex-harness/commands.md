@@ -31,7 +31,7 @@ Common forms:
   limits, MCP servers, and skills.
 - `/codex models` lists live Codex app-server models.
 - `/codex threads [filter]` lists recent Codex app-server threads.
-- `/codex goal` reads or updates the attached thread's native Codex goal. Codex automatic goal continuation stays disabled; OpenClaw does not own autonomous follow-on turns yet.
+- `/codex goal` reads or updates the attached thread's native Codex goal. Codex automatic goal continuation stays disabled. Use OpenClaw's [`/goal`](/tools/goal) for an objective pursued through the shared continuation queue.
 - `/codex resume <thread-id>` attaches the current OpenClaw session to an
   existing Codex thread.
 - `/codex bind [thread-id] [--cwd <path>] [--model <model>] [--provider <provider>]`
@@ -88,6 +88,14 @@ If an ordinary OpenClaw-managed native thread was deleted, the next turn starts
 a fresh native thread while keeping the selected model and provider. This
 recovery preserves pending manual attachments and native-model-owned threads.
 It does not replay a turn whose native outcome is uncertain.
+
+For a `/codex bind` conversation, an app-server restart can unload the bound
+thread without deleting its history. If Codex rejects the next turn before
+accepting its input, OpenClaw resumes that same thread and submits the message
+once more. It does not create a replacement thread. Deleted history,
+authentication failures, and uncertain turn outcomes stay visible instead of
+triggering automatic replay. If recovery reports unavailable history, rebind
+the conversation and resend the message.
 
 ### Shared Fast mode and Codex fast mode
 
