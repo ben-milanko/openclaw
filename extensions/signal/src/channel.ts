@@ -462,6 +462,11 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
       },
       heartbeat: {
         sendTyping: async ({ cfg, to, accountId }) => {
+          if (
+            resolveSignalAccount({ cfg, accountId }).config.assistantRequestPrefixes !== undefined
+          ) {
+            return;
+          }
           await (
             await loadSignalSendRuntime()
           ).sendTypingSignal(to, {
@@ -470,6 +475,11 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
           });
         },
         clearTyping: async ({ cfg, to, accountId }) => {
+          if (
+            resolveSignalAccount({ cfg, accountId }).config.assistantRequestPrefixes !== undefined
+          ) {
+            return;
+          }
           await (
             await loadSignalSendRuntime()
           ).sendTypingSignal(to, {
