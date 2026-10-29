@@ -122,6 +122,9 @@ describe.skipIf(process.platform === "win32")(
           env: {
             OPENCLAW_AGENT_HARNESS_FALLBACK: "none",
             OPENCLAW_QA_CODEX_APP_SERVER_VERSION: CODEX_APP_SERVER_VERSION,
+            OPENCLAW_SYSTEMD_UNIT: `openclaw-qa-scheduled-shell-${randomUUID()}`,
+            OPENCLAW_SERVICE_MARKER: undefined,
+            OPENCLAW_SERVICE_KIND: undefined,
             OPENCLAW_SKIP_CRON: undefined,
             OPENCLAW_SKIP_PROVIDERS: undefined,
             OPENCLAW_TEST_MINIMAL_GATEWAY: undefined,
