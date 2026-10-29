@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { createDeferred } from "../../../test/helpers/promise.js";
 import type { TrustedMessageAuditEvent } from "../../audit/message-audit-events.js";
 import { onTrustedMessageAuditEventForTest as onTrustedMessageAuditEvent } from "../../audit/message-audit-events.test-support.js";
+import type { ChannelMessageUnknownSendContext } from "../../channels/message/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { createEmptyPluginRegistry } from "../../plugins/registry.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../../plugins/runtime.js";
@@ -439,6 +440,125 @@ describe("durable outbound queue delivery", () => {
       getDeliveryQueueEntryStatus(OUTBOUND_DELIVERY_QUEUE_NAME, deliveryIntentId, tmpDir),
     ).toBe("completed");
     expect(sendMatrix).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a timed-out attachment uncertain without applying the final-text retry policy", async () => {
+    const originalSource = path.join(tmpDir, "attachment-report.txt");
+    const originalBytes = "synthetic attachment awaiting a provider receipt";
+    await fs.writeFile(originalSource, originalBytes);
+    let sentBytes: string | undefined;
+    const sendMatrix = vi.fn(
+      async (_to: string, _text: string, options?: Record<string, unknown>) => {
+        if (typeof options?.mediaUrl !== "string") {
+          throw new Error("Expected the attachment at the provider boundary");
+        }
+        sentBytes = await fs.readFile(options.mediaUrl, "utf8");
+        throw Object.assign(new Error("ETIMEDOUT waiting for the attachment receipt"), {
+          code: "ETIMEDOUT",
+        });
+      },
+    );
+    const reconcileUnknownSend = vi.fn(async (_request: ChannelMessageUnknownSendContext) => ({
+      status: "unresolved" as const,
+      error: "provider receipt lookup timed out",
+      retryable: true,
+    }));
+    setActivePluginRegistry(
+      createTestRegistry([
+        {
+          pluginId: "matrix",
+          source: "test",
+          plugin: {
+            ...createOutboundTestPlugin({ id: "matrix", outbound: matrixOutboundForQueueTest }),
+            message: {
+              send: {
+                text: async () => {
+                  throw new Error("Unexpected text fallback for the attachment");
+                },
+              },
+              durableFinal: {
+                capabilities: { reconcileUnknownSend: true },
+                reconcileUnknownSend,
+              },
+            },
+          },
+        },
+      ]),
+    );
+    const deliveryIntentId = "cron-direct-delivery:v1:attachment-receipt-timeout";
+    const params = matrixRequest({
+      payloads: [{ text: "Attachment report", mediaUrl: originalSource }],
+      accountId: "attachment-account",
+      threadId: "thread-42",
+      deps: { matrix: sendMatrix },
+      mediaAccess: { localRoots: [tmpDir] },
+      queuePolicy: "required" as const,
+      deliveryIntentId,
+      completionRetention: boundedCronCompletionRetention,
+      reusePendingDeliveryIntent: true,
+      retryAmbiguousFinalText: true,
+    });
+
+    await expect(deliverOutboundPayloads(params)).rejects.toThrow(
+      "ETIMEDOUT waiting for the attachment receipt",
+    );
+    expect(sentBytes).toBe(originalBytes);
+    const [pending] = await loadPendingDeliveries(tmpDir);
+    expect(pending).toMatchObject({
+      id: deliveryIntentId,
+      to: "!room:example",
+      accountId: "attachment-account",
+      threadId: "thread-42",
+      recoveryState: "unknown_after_send",
+    });
+    expect(pending?.retryAmbiguousFinalText).toBeUndefined();
+    const spoolPaths = collectEntrySpoolPaths(
+      pending
+        ? acceptedPreparedOutboundEntries(pending.preparedBatch).map((entry) => entry.payload)
+        : [],
+      tmpDir,
+    );
+    expect(spoolPaths).toHaveLength(1);
+    const spoolPath = spoolPaths[0]!;
+    expect(sendMatrix).toHaveBeenCalledExactlyOnceWith(
+      "!room:example",
+      "Attachment report",
+      expect.objectContaining({ accountId: "attachment-account", mediaUrl: originalSource }),
+    );
+    await fs.unlink(originalSource);
+
+    await expect(deliverOutboundPayloads(params)).rejects.toThrow(
+      `Stable delivery intent is already queued: ${deliveryIntentId}`,
+    );
+    expect(reconcileUnknownSend).not.toHaveBeenCalled();
+    const replay = vi.fn<DeliverFn>(async (request) =>
+      deliverOutboundPayloads({ ...request, deps: { matrix: sendMatrix } }),
+    );
+    await drainMatrixReconnect({ deliver: replay, stateDir: tmpDir });
+
+    expect(replay).not.toHaveBeenCalled();
+    expect(sendMatrix).toHaveBeenCalledOnce();
+    expect(reconcileUnknownSend).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        queueId: deliveryIntentId,
+        channel: "matrix",
+        to: "!room:example",
+        accountId: "attachment-account",
+        threadId: "thread-42",
+      }),
+    );
+    expect(collectEntrySpoolPaths(reconcileUnknownSend.mock.calls[0]![0].payloads, tmpDir)).toEqual(
+      [spoolPath],
+    );
+    expect((await loadPendingDeliveries(tmpDir))[0]).toMatchObject({
+      id: deliveryIntentId,
+      recoveryState: "unknown_after_send",
+      lastError: expect.stringContaining("provider receipt lookup timed out"),
+    });
+    expect(
+      getDeliveryQueueEntryStatus(OUTBOUND_DELIVERY_QUEUE_NAME, deliveryIntentId, tmpDir),
+    ).toBe("pending");
+    await expect(fs.readFile(spoolPath, "utf8")).resolves.toBe(originalBytes);
   });
 
   it("does not retain a pre-send suppression across an ambiguous crash boundary", async () => {
