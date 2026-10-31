@@ -144,8 +144,27 @@ describe("update.run current owner authority", () => {
         expect(startManagedServiceUpdateHandoffMock).toHaveBeenCalledOnce();
         expect(transferManagedServiceUpdateHandoffMock).toHaveBeenCalledOnce();
         expect(scheduleGatewayRestartMock).not.toHaveBeenCalled();
-        const run = expectDefined(listUpdateRuns()[0], "accepted update run");
-        expect(run.status).toBe("running");
+        const runs = listUpdateRuns();
+        expect(runs).toHaveLength(1);
+        const run = expectDefined(runs[0], "accepted update run");
+        expect(run).toMatchObject({
+          status: "running",
+          finishedAtMs: null,
+          confirmedAtMs: null,
+        });
+        expect(result.details).toMatchObject({
+          runId: run.runId,
+          status: "skipped",
+          reason: "managed-service-handoff-started",
+          handoff: { status: "started" },
+          next: expect.stringContaining(
+            "Wait for the automatic restart, verification, and final notices",
+          ),
+        });
+        expect(startManagedServiceUpdateHandoffMock.mock.calls[0]?.[0].runId).toBe(run.runId);
+        if (change !== "channel-less") {
+          expect(run.origin.sessionKey).toBe("agent:main:slack:dm:owner:thread:123");
+        }
         expect(sentinelState.capturedPayload?.stats?.runId).toBe(run.runId);
       } else {
         expect(result.details).toMatchObject({
