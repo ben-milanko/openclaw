@@ -296,6 +296,7 @@ it.each([
           silentReplyPromptMode: "none",
         });
       expect(prompt(prepared.opts.extraSystemPrompt)).toBe(prompt(normalContext));
+      expect(prepared.opts.extraSystemPromptTurnContext).toEqual({ start: 0, text: normalContext });
       expect(prepared.opts.privateCompletion).toBe(privateCompletion);
       expect(prepared.opts.silentReplyPromptMode).toBe("none");
       expect(prepared.opts.inputProvenance).toEqual({

@@ -5,6 +5,7 @@ import {
   nativeHookRelayTesting,
   onAgentEvent,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { initializeGlobalHookRunner } from "openclaw/plugin-sdk/hook-runtime";
 import { loadNodeExecAvailability } from "openclaw/plugin-sdk/node-selection-runtime";
 import {
@@ -13,11 +14,16 @@ import {
 } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { expect, it, vi } from "vitest";
 import { readAttemptTerminal } from "./attempt-terminal.test-helper.js";
-import { isCodexAppServerLiveThreadClaimed } from "./client-runtime.js";
+import {
+  isCodexAppServerLiveThreadClaimed,
+  isCodexAppServerLiveThreadProtected,
+} from "./client-runtime.js";
+import { CODEX_INFERENCE_GENERATION_KEY } from "./inference-context.js";
+import { getCodexInferenceThread, ownCodexInferenceClient } from "./inference-routing.js";
 import { nativeHookRelayUnregisterQueue } from "./native-hook-relay-state.js";
 import { CodexNativeSubagentCompletionDelivery } from "./native-subagent-completion-delivery.js";
 import { defaultNativeSubagentMonitorRuntime } from "./native-subagent-monitor-runtime.js";
-import type { CodexServerNotification, JsonObject } from "./protocol.js";
+import { isJsonObject, type CodexServerNotification, type JsonObject } from "./protocol.js";
 import {
   createTestParams,
   createCodexRuntimePlanFixture,
@@ -293,7 +299,7 @@ it.each(["delayed-success", "opaque-steer", "wait-before-admission", "yield-rece
   },
 );
 
-it("reports an earlier turn's unsettled native child to a later turn's sessions_yield", async () => {
+it("continues a yielded parent across turn context changes and delivers its child once", async () => {
   vi.mocked(loadNodeExecAvailability).mockResolvedValue({
     cacheKey: "[]",
     isAvailable: () => false,
@@ -301,20 +307,88 @@ it("reports an earlier turn's unsettled native child to a later turn's sessions_
   initializeGlobalHookRunner(
     createMockPluginRegistry([{ hookName: "before_tool_call", handler: async () => undefined }]),
   );
+  const turnContexts = {
+    "run-1": "Synthetic Talk context: reply to the current speaker.",
+    "run-2": "Synthetic direct chat context: reply to the current user message.",
+    "run-heartbeat": "Synthetic heartbeat context: check the standing commitments.",
+    "run-completion": "Synthetic completion context: deliver the waiting child's result.",
+  };
+  const persistentPolicy = "Synthetic configured policy: preserve native child instructions.";
+  let currentRunId: keyof typeof turnContexts = "run-1";
+  const receivedContexts: string[] = [];
+  const completionTurnStarted = createDeferred<{
+    run: ReturnType<typeof runCodexAppServerAttempt>;
+  }>();
+  const interrupts = new Map<string, ReturnType<typeof createDeferred<void>>>();
   const delivery = vi
     .spyOn(defaultNativeSubagentMonitorRuntime, "deliverAgentHarnessCompletion")
-    .mockResolvedValue({ delivered: true, path: "direct" });
+    .mockImplementation(async (event) => {
+      if (event.childSessionKey === "codex-thread:child-running") {
+        try {
+          completionTurnStarted.resolve(await startTurn("run-completion"));
+        } catch (error) {
+          completionTurnStarted.reject(error);
+          throw error;
+        }
+      }
+      return { delivered: true, path: "direct" };
+    });
   const turns: string[] = [];
-  const harness = createStartedThreadHarness(async (method) => {
-    if (method === "thread/resume") {
-      return threadStartResult();
-    }
-    if (method === "turn/start") {
-      turns.push(`turn-${turns.length + 1}`);
-      return turnStartResult(turns.at(-1));
-    }
-    return undefined;
-  });
+  const harness = createStartedThreadHarness(
+    async (method, request) => {
+      if (method === "turn/interrupt" && isJsonObject(request)) {
+        assert(typeof request.turnId === "string");
+        interrupts.get(request.turnId)?.resolve();
+        return {};
+      }
+      if (method === "account/read") {
+        return { account: { type: "apiKey" } };
+      }
+      if (method === "thread/resume") {
+        return threadStartResult();
+      }
+      if (method === "turn/start") {
+        const route = getCodexInferenceThread(harness.client, "thread-1");
+        assert(route && isJsonObject(request) && isJsonObject(request.responsesapiClientMetadata));
+        const generation = request.responsesapiClientMetadata[CODEX_INFERENCE_GENERATION_KEY];
+        assert(typeof generation === "string");
+        const threadRequest = harness.requests.find(
+          ({ method: requestMethod }) => requestMethod === "thread/start",
+        );
+        assert(isJsonObject(threadRequest?.params));
+        assert(typeof threadRequest.params.developerInstructions === "string");
+        const nativeBody = { instructions: threadRequest.params.developerInstructions, input: [] };
+        expect(nativeBody.instructions).toContain(persistentPolicy);
+        for (const context of Object.values(turnContexts)) {
+          expect(nativeBody.instructions).not.toContain(context);
+        }
+        const metadata = { requestKind: "turn" as const, threadId: "thread-1", generation };
+        const prepared = route.context.prepare(nativeBody, metadata);
+        prepared.assertCurrent();
+        assert(typeof prepared.body.instructions === "string");
+        receivedContexts.push(prepared.body.instructions);
+        expect(prepared.body.instructions).toContain(turnContexts[currentRunId]);
+        for (const [runId, context] of Object.entries(turnContexts)) {
+          if (runId !== currentRunId) {
+            expect(prepared.body.instructions).not.toContain(context);
+          }
+        }
+        // Per-message routing and heartbeat context must not enter child inference.
+        expect(
+          route.context.prepare(nativeBody, {
+            ...metadata,
+            threadId: "child-running",
+            parentThreadId: "thread-1",
+          }).body,
+        ).toBe(nativeBody);
+        turns.push(`turn-${turns.length + 1}`);
+        return turnStartResult(turns.at(-1));
+      }
+      return undefined;
+    },
+    { persistedThreads: [] },
+  );
+  ownCodexInferenceClient(harness.client);
   const notify = (method: string, params: JsonObject) =>
     harness.notify({ method, params } as CodexServerNotification);
   const childTurn = (threadId: string, result?: string) =>
@@ -360,9 +434,16 @@ it("reports an earlier turn's unsettled native child to a later turn's sessions_
     await childTurn(threadId);
   };
   const hosts: Array<Awaited<ReturnType<typeof createAdmittedHostCapabilityTestFixture>>> = [];
-  const startTurn = async (runId: string) => {
+  const startTurn = async (runId: keyof typeof turnContexts) => {
+    currentRunId = runId;
     const params = createTestParams();
     params.runId = runId;
+    params.trigger =
+      runId === "run-heartbeat" ? "heartbeat" : runId === "run-completion" ? "event" : "user";
+    params.extraSystemPrompt = `${turnContexts[runId]}\n\n${persistentPolicy}`;
+    params.extraSystemPromptTurnContext = { start: 0, text: turnContexts[runId] };
+    // First managed-route preparation includes the real native-policy workers.
+    params.timeoutMs = 60_000;
     await attachSqliteSessionTarget(params, path.join(tempDir, "sessions.json"), "yield-session");
     params.runtimePlan = createCodexRuntimePlanFixture();
     setCodexTestModelSupportsTools(params, true);
@@ -380,12 +461,20 @@ it("reports an earlier turn's unsettled native child to a later turn's sessions_
     // Wrapped so awaiting the accepted turn does not also await the attempt.
     return { run };
   };
-  const completeTurn = async ({ run }: Awaited<ReturnType<typeof startTurn>>) => {
-    await harness.completeTurn({ threadId: "thread-1", turnId: turns.at(-1)! });
+  const completeTurn = async (
+    { run }: Awaited<ReturnType<typeof startTurn>>,
+    interrupted = false,
+  ) => {
+    await notify("turn/completed", {
+      threadId: "thread-1",
+      turn: { id: turns.at(-1)!, status: interrupted ? "interrupted" : "completed", items: [] },
+    });
     expect(readAttemptTerminal(await run)).toMatchObject({ aborted: false, promptError: null });
     await nativeHookRelayUnregisterQueue.flush();
   };
   const yieldTurn = async () => {
+    const interrupted = createDeferred<void>();
+    interrupts.set(turns.at(-1)!, interrupted);
     const callId = `yield-${turns.at(-1)}`;
     const response = (await harness.handleServerRequest({
       id: callId,
@@ -398,8 +487,16 @@ it("reports an earlier turn's unsettled native child to a later turn's sessions_
         tool: "sessions_yield",
         arguments: { message: "Waiting for children" },
       },
-    })) as { contentItems: Array<{ text: string }> };
-    return JSON.parse(response.contentItems[0]!.text) as Record<string, unknown>;
+    })) as { success: boolean; contentItems: Array<{ text: string }> };
+    assert(
+      response.success,
+      response.contentItems[0]?.text ?? "Expected sessions_yield to succeed",
+    );
+    const result = JSON.parse(response.contentItems[0]!.text) as Record<string, unknown>;
+    if (result.status === "yielded") {
+      await interrupted.promise;
+    }
+    return result;
   };
 
   try {
@@ -409,13 +506,15 @@ it("reports an earlier turn's unsettled native child to a later turn's sessions_
     await childTurn("child-settled", "Settled result");
     await spawn("child-running");
     expect(await yieldTurn()).toMatchObject({ status: "yielded" });
-    await completeTurn(first);
+    await completeTurn(first, true);
     // The finished child's detached delivery settles it once its parent turn ends.
     await vi.waitFor(() =>
       expect(delivery).toHaveBeenCalledWith(
         expect.objectContaining({ childSessionKey: "codex-thread:child-settled" }),
       ),
     );
+    expect(isCodexAppServerLiveThreadProtected(harness.client, "thread-1")).toBe(true);
+    expect(isCodexAppServerLiveThreadClaimed(harness.client, "thread-1")).toBe(false);
 
     // A later turn owns no new claim, yet the still-running child will resume the session.
     const second = await startTurn("run-2");
@@ -433,6 +532,28 @@ it("reports an earlier turn's unsettled native child to a later turn's sessions_
     });
     expect(result.pendingChildren).toHaveLength(1);
     await completeTurn(second);
+
+    await completeTurn(await startTurn("run-heartbeat"));
+    expect(isCodexAppServerLiveThreadProtected(harness.client, "thread-1")).toBe(true);
+    await childTurn("child-running", "Running child's final result");
+    await completeTurn(await completionTurnStarted.promise);
+    await childTurn("child-running", "Running child's final result");
+    expect(
+      delivery.mock.calls.filter(
+        ([event]) => event.childSessionKey === "codex-thread:child-running",
+      ),
+    ).toHaveLength(1);
+    expect(receivedContexts).toHaveLength(4);
+    const nativeStart = harness.requests.find(({ method }) => method === "thread/start");
+    for (const context of Object.values(turnContexts)) {
+      expect(JSON.stringify(nativeStart?.params)).not.toContain(context);
+    }
+    // Context changes reuse the exact protected parent, never resubscribe or replace it.
+    expect(
+      harness.requests.filter(({ method }) =>
+        ["thread/start", "thread/resume", "thread/unsubscribe"].includes(method),
+      ),
+    ).toEqual([{ method: "thread/start", params: expect.anything() }]);
   } finally {
     harness.close();
     for (const host of hosts) {

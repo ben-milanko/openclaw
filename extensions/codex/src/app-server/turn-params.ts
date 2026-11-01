@@ -28,6 +28,7 @@ import {
   CODEX_NATIVE_PERSONALITY_NONE,
   resolveCodexAppServerRequestModelSelection,
 } from "./thread-model-selection.js";
+import { splitCodexExtraSystemPrompt } from "./thread-prompt.js";
 import { buildCodexUserInput } from "./user-input.js";
 
 const CODEX_CURRENT_SENDER_FIELD_MAX_CHARS = 256;
@@ -260,6 +261,7 @@ export function buildCodexParentLocalInstructions(
   } = {},
 ): string | null {
   const contextInstructions = joinPresentSections(
+    splitCodexExtraSystemPrompt(params).turn,
     options.personaInstructions,
     options.skillsInstructions,
     options.memoryInstructions,

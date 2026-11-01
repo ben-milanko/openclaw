@@ -80,7 +80,8 @@ async function setup(label: string) {
     },
   }));
   const lastPrompt = () => runAgent.mock.calls.at(-1)?.[0].extraSystemPrompt ?? "";
-  return { cfg, storePath, lastPrompt };
+  const lastParams = () => runAgent.mock.calls.at(-1)?.[0];
+  return { cfg, storePath, lastPrompt, lastParams };
 }
 
 function expectContractOnce(prompt: string, markup: string) {
@@ -91,7 +92,7 @@ function expectContractOnce(prompt: string, markup: string) {
 it.each([["rich", "markdown_telegram_rich"]])(
   "gives a Telegram reply on the %s account its contract once",
   async (accountId, markup) => {
-    const { cfg, lastPrompt } = await setup("reply-delivery-format");
+    const { cfg, lastPrompt, lastParams } = await setup("reply-delivery-format");
     await getReplyFromConfig(
       finalizeInboundContext({
         Body: "Post the status table",
@@ -101,17 +102,23 @@ it.each([["rich", "markdown_telegram_rich"]])(
         OriginatingTo: "telegram:123",
         AccountId: accountId,
         ChatType: "direct",
+        GroupSystemPrompt: "Synthetic configured persistent policy.",
         SessionKey: `agent:main:telegram:${accountId}:direct:123`,
       }),
       undefined,
       cfg,
     );
     expectContractOnce(lastPrompt(), markup);
+    const annotation = lastParams()?.extraSystemPromptTurnContext;
+    expect(annotation?.start).toBe(0);
+    expect(annotation?.text).toContain('"account_id": "rich"');
+    expect(annotation?.text).not.toContain("Synthetic configured persistent policy.");
+    expect(lastPrompt()).toBe(`${annotation?.text}\n\nSynthetic configured persistent policy.`);
   },
 );
 
 it("gives a heartbeat delivered to Telegram the delivering account's contract once", async () => {
-  const { cfg, storePath, lastPrompt } = await setup("heartbeat-delivery-format");
+  const { cfg, storePath, lastPrompt, lastParams } = await setup("heartbeat-delivery-format");
   const sessionKey = await seedMainSessionStore(storePath, cfg, {
     lastChannel: "telegram",
     lastProvider: "telegram",
@@ -132,4 +139,5 @@ it("gives a heartbeat delivered to Telegram the delivering account's contract on
   });
   expect(result.status).toBe("ran");
   expectContractOnce(lastPrompt(), "markdown_telegram_rich");
+  expect(lastParams()?.extraSystemPromptTurnContext?.text).toContain('"account_id": "rich"');
 });

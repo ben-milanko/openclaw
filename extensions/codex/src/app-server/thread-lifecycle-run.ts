@@ -3,6 +3,7 @@ import { embeddedAgentLog } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { isIncognitoSessionKey } from "openclaw/plugin-sdk/session-key-runtime";
 import { closeCodexStartupClientBestEffort } from "./attempt-client-cleanup.js";
 import { resolveCodexAppServerClientInstanceId } from "./client.js";
+import { joinPresentSections } from "./developer-instruction-sections.js";
 import { hasCodexNativeToolCatalog, loadCodexNativeToolCatalog } from "./native-tool-catalog.js";
 import { buildCodexAppServerConnectionFingerprint } from "./plugin-app-cache-key.js";
 import {
@@ -51,6 +52,7 @@ import {
   throwIfCodexThreadLifecycleAborted,
   tryReuseCodexLiveThread,
 } from "./thread-lifecycle-warm.js";
+import { splitCodexExtraSystemPrompt } from "./thread-prompt.js";
 import { materializePendingSupervisionBranch } from "./thread-supervision.js";
 
 export async function startOrResumeThread(
@@ -133,6 +135,14 @@ export async function startOrResumeThread(
       params.refreshableInstructions = params.inferenceRoute
         ? undefined
         : input.refreshableInstructions;
+      // Only an actual relay can preserve current context through native compaction.
+      params.developerInstructions =
+        params.inferenceRoute || input.developerInstructions === undefined
+          ? input.developerInstructions
+          : joinPresentSections(
+              input.developerInstructions,
+              splitCodexExtraSystemPrompt(params.params).turn,
+            );
       return context;
     };
     const releaseRetainedThread = (
