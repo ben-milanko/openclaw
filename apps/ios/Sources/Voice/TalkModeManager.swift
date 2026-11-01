@@ -209,6 +209,7 @@ final class TalkModeManager {
     private var recognitionGeneration: UInt64 = 0
     private var silenceTask: Task<Void, Never>?
     private var realtimeSession: TalkRealtimeWebRTCSession?
+    private var stoppingRealtimeAudioSession: TalkRealtimeWebRTCSession?
     private var activeRealtimeVoiceSession: TalkRealtimeVoiceSessionOwner?
     private var activeRealtimeVoiceSessionId: String? {
         self.activeRealtimeVoiceSession?.voiceSessionId
@@ -607,6 +608,8 @@ final class TalkModeManager {
                 + "listening=\(self.isListening) gatewayConnected=\(self.gatewayConnected)")
         guard self.canBeginStart() else { return }
 
+        self.soundCues.stop()
+        self.releaseStoppingRealtimeAudioSession()
         self.isStarting = true
         self.startAttemptID += 1
         let attemptID = self.startAttemptID
@@ -783,7 +786,7 @@ final class TalkModeManager {
         self.silenceTask = nil
         self.resetRealtimeRestartState()
         self.cancelRealtimePrefetch()
-        self.stopRealtimeSession()
+        self.stopRealtimeSession(keepAudioSessionActive: playStopCue)
         self.closeLogicalRealtimeVoiceSessions()
         self.stopRecognition()
         self.stopSpeaking()
@@ -2592,7 +2595,8 @@ final class TalkModeManager {
         return session
     }
 
-    private func stopRealtimeSession(preserveRuns: Bool = false) {
+    private func stopRealtimeSession(preserveRuns: Bool = false, keepAudioSessionActive: Bool = false) {
+        self.releaseStoppingRealtimeAudioSession()
         let realtimeSession = self.realtimeSession
         if self.activeRealtimeVoiceSession == nil {
             // A stopped create may have returned its ID before the manager adopted it.
@@ -2602,7 +2606,12 @@ final class TalkModeManager {
             self.realtimeRelaySession != nil ||
             self.realtimeRelayStartGeneration != nil
         self.realtimeSession = nil
-        realtimeSession?.stop(preserveRuns: preserveRuns)
+        // Stop capture and the peer immediately, but keep its activation until the
+        // stop chime finishes. Releasing it first can drop a car/headset audio route.
+        if keepAudioSessionActive {
+            self.stoppingRealtimeAudioSession = realtimeSession
+        }
+        realtimeSession?.stop(preserveRuns: preserveRuns, keepAudioSessionActive: keepAudioSessionActive)
         // Relay callbacks do not carry the session object. Advance their owner
         // token before stop so buffered status/audio cannot reclaim PTT state.
         self.realtimeRelayGeneration &+= 1
@@ -4069,11 +4078,13 @@ extension TalkModeManager {
     }
 
     private func configureOwnedAudioSession() throws {
+        self.releaseStoppingRealtimeAudioSession()
         try Self.configureAudioSession(preferredInputDeviceID: self.preferredInputDeviceID)
         self.audioSessionIsActive = true
     }
 
     private func configureOwnedRealtimeAudioSession() throws {
+        self.releaseStoppingRealtimeAudioSession()
         try Self.configureRealtimeAudioSession(preferredInputDeviceID: self.preferredInputDeviceID)
         self.audioSessionIsActive = true
     }
@@ -4090,6 +4101,7 @@ extension TalkModeManager {
 
     private func deactivateAudioSession() {
         self.soundCues.stop()
+        self.releaseStoppingRealtimeAudioSession()
         guard self.audioSessionIsActive else { return }
         do {
             if let audioSessionDeactivationAction {
@@ -4101,6 +4113,11 @@ extension TalkModeManager {
         } catch {
             self.logger.warning("audio session deactivate failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    private func releaseStoppingRealtimeAudioSession() {
+        self.stoppingRealtimeAudioSession?.releaseAudioSessionActivation()
+        self.stoppingRealtimeAudioSession = nil
     }
 
     static func configureAudioSession(preferredInputDeviceID: String? = nil) throws {
@@ -4309,6 +4326,7 @@ extension TalkModeManager {
             transcriptStore: self.realtimeTranscriptStore,
             delegate: self)
         self.realtimeSession = session
+        self.audioSessionIsActive = true
         self.realtimeSession(session, didChangeStatus: "Connecting")
         return session
     }

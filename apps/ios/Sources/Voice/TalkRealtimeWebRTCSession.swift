@@ -357,7 +357,7 @@ final class TalkRealtimeWebRTCSession: NSObject {
         self.observeReadiness()
     }
 
-    func stop(preserveRuns: Bool = false) {
+    func stop(preserveRuns: Bool = false, keepAudioSessionActive: Bool = false) {
         let shouldNotify = !self.stopped
         self.stopped = true
         self.preserveRunsOnStop = self.preserveRunsOnStop || preserveRuns
@@ -373,7 +373,9 @@ final class TalkRealtimeWebRTCSession: NSObject {
         self.peerConnection?.close()
         self.peerConnection = nil
         self.factory = nil
-        self.releaseAudioSessionActivation()
+        if !keepAudioSessionActive {
+            self.releaseAudioSessionActivation()
+        }
         self.session = nil
         self.assistantAudioActive = false
         self.assistantAudioFinishTask?.cancel()
@@ -388,7 +390,7 @@ final class TalkRealtimeWebRTCSession: NSObject {
         self.trace("audio route preference reapplied")
     }
 
-    private func releaseAudioSessionActivation() {
+    func releaseAudioSessionActivation() {
         guard self.ownsAudioSessionActivation else { return }
         self.ownsAudioSessionActivation = false
 
