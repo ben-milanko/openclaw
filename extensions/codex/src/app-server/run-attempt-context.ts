@@ -187,23 +187,18 @@ export async function prepareCodexAttemptContext(
   // managed parent-local inference route; it is separate from immutable policy.
   const refreshableInstructions =
     joinPresentSections(
-      runtimeParams.extraSystemPrompt,
       skillsInstructions,
       workspaceBootstrapContext.sharedPersonaInstructions,
       workspaceBootstrapContext.memoryInstructions,
     ) || undefined;
   const baseDeveloperInstructions = joinPresentSections(
-    // Inbound metadata and other turn additions are not immutable native policy.
-    // Managed inference supplies them only to this parent; other connections keep
-    // the existing refreshable thread-instruction carrier above.
-    buildDeveloperInstructions(
-      { ...runtimeParams, extraSystemPrompt: undefined },
-      {
-        dynamicTools: toolBridge.availableSpecs,
-        nativeCodeModeOnlyEnabled:
-          runtime.nativeToolSurfaceEnabled && connection.appServer.codeModeOnly,
-      },
-    ),
+    buildDeveloperInstructions(runtimeParams, {
+      // The lifecycle restores this section to creation policy if no relay is selected.
+      omitConversationTurnContext: true,
+      dynamicTools: toolBridge.availableSpecs,
+      nativeCodeModeOnlyEnabled:
+        runtime.nativeToolSurfaceEnabled && connection.appServer.codeModeOnly,
+    }),
     agentWorkspaceDeveloperInstructions,
   );
   const watchedSessionsContext = await prepareCodexWatchedSessionsContext({

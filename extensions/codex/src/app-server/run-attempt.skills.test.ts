@@ -147,8 +147,6 @@ describe("Codex app-server skill catalog delivery", () => {
       // Allow the real before_compaction history worker to start.
       params.timeoutMs = 60_000;
       params.skillsSnapshot = { prompt: catalog, skills: [] };
-      params.extraSystemPrompt =
-        runId === "run-1" ? "Synthetic initial turn context." : "Synthetic updated turn context.";
       const turnStartsBefore = turnStarts();
       const run = runCodexAppServerAttempt(params);
       await Promise.race([
@@ -186,7 +184,5 @@ describe("Codex app-server skill catalog delivery", () => {
     const injected = harness.requests.filter(({ method }) => method === "thread/inject_items");
     expect(injected).toHaveLength(3);
     expect(JSON.stringify(injected[2]?.params)).toContain(SECOND_CATALOG);
-    expect(JSON.stringify(injected[2]?.params)).toContain("Synthetic updated turn context.");
-    expect(JSON.stringify(injected[2]?.params)).not.toContain("Synthetic initial turn context.");
   });
 });

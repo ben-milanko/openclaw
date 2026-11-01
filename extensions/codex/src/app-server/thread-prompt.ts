@@ -34,15 +34,44 @@ export type CodexThreadPromptContext = Pick<
   | "sourceReplyDeliveryMode"
   | "promptMode"
   | "extraSystemPrompt"
+  | "extraSystemPromptTurnContext"
   | "gitCoauthorPrompt"
   | "runtimePlan"
 >;
+
+/** Move only the exact section annotated by its producer; later policy additions survive. */
+export function splitCodexExtraSystemPrompt(
+  params: Pick<CodexThreadPromptContext, "extraSystemPrompt" | "extraSystemPromptTurnContext">,
+) {
+  const prompt = params.extraSystemPrompt;
+  const context = params.extraSystemPromptTurnContext;
+  if (!prompt || !context?.text || !Number.isInteger(context.start) || context.start < 0) {
+    return { persistent: prompt, turn: undefined };
+  }
+  const end = context.start + context.text.length;
+  if (
+    prompt.slice(context.start, end) !== context.text ||
+    (context.start > 0 && prompt.slice(context.start - 2, context.start) !== "\n\n") ||
+    (end < prompt.length && prompt.slice(end, end + 2) !== "\n\n")
+  ) {
+    return { persistent: prompt, turn: undefined };
+  }
+  return {
+    persistent:
+      context.start === 0
+        ? prompt.slice(end === prompt.length ? end : end + 2)
+        : prompt.slice(0, context.start - 2) + prompt.slice(end),
+    turn: context.text,
+  };
+}
 
 export function buildDeveloperInstructions(
   params: CodexThreadPromptContext,
   options: {
     dynamicTools?: readonly CodexDynamicToolSpec[];
     nativeCodeModeOnlyEnabled?: boolean;
+    /** The lifecycle must select a compaction-safe carrier before omitting this context. */
+    omitConversationTurnContext?: boolean;
   } = {},
 ): string {
   const deferredToolNames = new Set<string>();
@@ -151,7 +180,9 @@ export function buildDeveloperInstructions(
     }),
     nativeCommandGuidance,
     params.gitCoauthorPrompt,
-    params.extraSystemPrompt,
+    options.omitConversationTurnContext
+      ? splitCodexExtraSystemPrompt(params).persistent
+      : params.extraSystemPrompt,
   ];
   return sections.filter((section) => typeof section === "string" && section.trim()).join("\n\n");
 }

@@ -242,6 +242,7 @@ export type FollowupRun = {
     | "scheduledToolPolicy"
     | "runtimePluginToolGrant"
     | "extraSystemPrompt"
+    | "extraSystemPromptTurnContext"
     | "sourceReplyDeliveryMode"
     | "taskSuggestionDeliveryMode"
     | "silentReplyPromptMode"

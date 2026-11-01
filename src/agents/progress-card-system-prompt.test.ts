@@ -81,14 +81,14 @@ describe("progress card system prompt", () => {
   it("preserves incognito-first composition order", async () => {
     const incognitoPrompt = appendIncognitoSystemPrompt({
       agentId: "main",
-      extraSystemPrompt: "Existing context.",
+      extraSystemPrompt: "  Existing context.\n",
       storePath: resolveIncognitoOpenClawAgentSqlitePath({ agentId: "main" }),
     });
 
-    expect(incognitoPrompt).not.toBe("Existing context.");
+    expect(incognitoPrompt).not.toBe("  Existing context.\n");
     const instruction = await append({});
     await expect(append({ extraSystemPrompt: incognitoPrompt })).resolves.toBe(
-      `${incognitoPrompt?.trim()}\n\n${instruction}`,
+      `${incognitoPrompt}\n\n${instruction}`,
     );
   });
 });

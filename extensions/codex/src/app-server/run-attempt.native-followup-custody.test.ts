@@ -313,6 +313,7 @@ it("continues a yielded parent across turn context changes and delivers its chil
     "run-heartbeat": "Synthetic heartbeat context: check the standing commitments.",
     "run-completion": "Synthetic completion context: deliver the waiting child's result.",
   };
+  const persistentPolicy = "Synthetic configured policy: preserve native child instructions.";
   let currentRunId: keyof typeof turnContexts = "run-1";
   const receivedContexts: string[] = [];
   const completionTurnStarted = createDeferred<{
@@ -357,6 +358,10 @@ it("continues a yielded parent across turn context changes and delivers its chil
         assert(isJsonObject(threadRequest?.params));
         assert(typeof threadRequest.params.developerInstructions === "string");
         const nativeBody = { instructions: threadRequest.params.developerInstructions, input: [] };
+        expect(nativeBody.instructions).toContain(persistentPolicy);
+        for (const context of Object.values(turnContexts)) {
+          expect(nativeBody.instructions).not.toContain(context);
+        }
         const metadata = { requestKind: "turn" as const, threadId: "thread-1", generation };
         const prepared = route.context.prepare(nativeBody, metadata);
         prepared.assertCurrent();
@@ -435,7 +440,8 @@ it("continues a yielded parent across turn context changes and delivers its chil
     params.runId = runId;
     params.trigger =
       runId === "run-heartbeat" ? "heartbeat" : runId === "run-completion" ? "event" : "user";
-    params.extraSystemPrompt = turnContexts[runId];
+    params.extraSystemPrompt = `${turnContexts[runId]}\n\n${persistentPolicy}`;
+    params.extraSystemPromptTurnContext = { start: 0, text: turnContexts[runId] };
     // First managed-route preparation includes the real native-policy workers.
     params.timeoutMs = 60_000;
     await attachSqliteSessionTarget(params, path.join(tempDir, "sessions.json"), "yield-session");
