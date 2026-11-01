@@ -1,6 +1,7 @@
 import Foundation
 import OpenClawKit
 import XCTest
+@preconcurrency import WebRTC
 @testable import OpenClaw
 
 @MainActor
@@ -31,6 +32,57 @@ final class TalkRealtimeVoiceSessionCleanupTests: XCTestCase {
 
     func testSuspendingBeforeManagerAdoptionCannotReachANewAccount() async throws {
         try await self.checkCleanup(orphan: false, replacement: "account", suspendBeforeAdoption: true)
+    }
+
+    func testStopCueRetainsRealtimeActivationOnlyUntilCompletionOrInterruption() async throws {
+        // The audio session is process-global; exercise its exit paths sequentially.
+        for exit in ["finished", "failed", "suspended", "restarted"] {
+            let soundCues = RecordingTalkSoundCues()
+            let manager = TalkModeManager(allowSimulatorCapture: true, soundCues: soundCues)
+            defer { manager.stop() }
+            try await self.activateDirectAudio(manager: manager)
+
+            soundCues.playbackSucceeds = exit != "failed"
+            manager.stop()
+            XCTAssertFalse(manager.isListening)
+            XCTAssertEqual(soundCues.played.last, .stopped)
+            XCTAssertEqual(RTCAudioSession.sharedInstance().isActive, exit != "failed")
+            switch exit {
+            case "suspended":
+                manager.suspendForBackground()
+                XCTAssertNil(soundCues.currentCue)
+            case "restarted":
+                let oldCompletion = soundCues.onFinished
+                manager._test_prepareEnabledRealtimeSessionForClose()
+                await manager.start()
+                XCTAssertTrue(manager.isListening)
+                oldCompletion?()
+                XCTAssertTrue(manager._test_audioSessionIsActive())
+            default:
+                soundCues.finish()
+            }
+            XCTAssertFalse(RTCAudioSession.sharedInstance().isActive)
+        }
+    }
+
+    private func activateDirectAudio(manager: TalkModeManager) async throws {
+        let session = manager._test_prepareDirectRealtimeSessionForListening()
+        do {
+            try await session.start(
+                provider: "openai", model: "gpt-realtime-2", voice: "marin",
+                supportsVoiceSelection: false,
+                prefetchedSession: TalkRealtimeClientSession(
+                    provider: "openai", transport: "webrtc", voiceSessionId: "synthetic-voice-session",
+                    clientSecret: "synthetic-client-secret", offerUrl: "http://[", offerHeaders: nil,
+                    model: "gpt-realtime-2", voice: "marin", expiresAt: nil, clientControl: nil))
+            XCTFail("The invalid offer URL must stop before any provider request")
+        } catch {
+            let error = error as NSError
+            XCTAssertEqual(error.domain, "TalkRealtimeWebRTC")
+            XCTAssertEqual(error.code, 4)
+        }
+        // Exercise the production WebRTC activation, not just the manager's flag.
+        XCTAssertTrue(RTCAudioSession.sharedInstance().isActive)
     }
 
     private func checkCleanup(
