@@ -97,6 +97,38 @@ describe("buildDeveloperInstructions deferred tool discovery", () => {
   });
 });
 
+describe("buildDeveloperInstructions conversation context", () => {
+  it.each([
+    { prompt: "Turn context\n\nConfigured policy", start: 0 },
+    { prompt: "Configured policy\n\nTurn context", start: 19 },
+  ])(
+    "retains configured policy while relaying the exact producer section (%j)",
+    ({ prompt, start }) => {
+      const instructions = buildDeveloperInstructions(
+        createParams({
+          extraSystemPrompt: prompt,
+          extraSystemPromptTurnContext: { start, text: "Turn context" },
+        }),
+        { omitConversationTurnContext: true },
+      );
+      expect(instructions).toContain("Configured policy");
+      expect(instructions).not.toContain("Turn context");
+    },
+  );
+
+  it.each([undefined, { start: 0, text: "Stale context" }, { start: 1, text: "urn context" }])(
+    "never removes unannotated or stale configured instructions (%j)",
+    (annotation) => {
+      const prompt = "Turn context\n\nConfigured policy";
+      const instructions = buildDeveloperInstructions(
+        createParams({ extraSystemPrompt: prompt, extraSystemPromptTurnContext: annotation }),
+        { omitConversationTurnContext: true },
+      );
+      expect(instructions).toContain(prompt);
+    },
+  );
+});
+
 describe("buildDeveloperInstructions delegation guidance", () => {
   it.each([{ requireWorkspaceOnly: true }] as const)(
     "does not advertise native helpers for restricted runs (%j)",

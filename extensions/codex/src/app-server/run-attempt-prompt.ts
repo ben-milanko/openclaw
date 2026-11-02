@@ -446,7 +446,10 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
       turnState.promptBuild.developerInstructions,
       parentLocalEgress ? undefined : refreshableInstructions,
       (parentLocalEgress
-        ? buildCodexParentLocalInstructions(params, { ...parentLocalContext, skillsInstructions })
+        ? buildCodexParentLocalInstructions(runtimeParams, {
+            ...parentLocalContext,
+            skillsInstructions,
+          })
         : buildTurnCollaborationMode(params).settings.developer_instructions) ?? undefined,
     );
   const rebuildCodexPromptBuildFromCurrentProjection = async (preserveInstructions = false) => {

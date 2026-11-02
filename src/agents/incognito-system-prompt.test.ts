@@ -7,11 +7,11 @@ describe("incognito system prompt", () => {
     expect(
       appendIncognitoSystemPrompt({
         agentId: "main",
-        extraSystemPrompt: "Existing context.",
+        extraSystemPrompt: "  Existing context.\n",
         storePath: resolveIncognitoOpenClawAgentSqlitePath({ agentId: "main" }),
       }),
     ).toBe(
-      "Existing context.\n\nThis chat is incognito; do not store its conversation content in memory files or long-term notes.",
+      "  Existing context.\n\n\nThis chat is incognito; do not store its conversation content in memory files or long-term notes.",
     );
   });
 });
