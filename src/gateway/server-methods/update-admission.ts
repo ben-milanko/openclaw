@@ -2,6 +2,7 @@ import {
   ErrorCodes,
   errorShape,
   validateUpdateRunParams,
+  type UpdateRunParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import type { PreparedCommandOwnerAuthority } from "../../auto-reply/command-auth.js";
 import { UpdatePreMutationError } from "../../cli/update-cli/shared.js";
@@ -87,7 +88,7 @@ export async function admitGatewayUpdateRequest(request: GatewayRequestHandlerOp
       undefined,
       errorShape(
         ErrorCodes.INVALID_REQUEST,
-        "This OCM version does not support an explicit Git update target.",
+        "This OCM version does not support an explicit update target.",
       ),
     );
     return null;
@@ -143,6 +144,24 @@ export function reportImmutableGatewayUpdateRefusal(
   });
 }
 
+/** Refused targets use the same admitted installation facts as the update request. */
+export function createGatewayUpdateRefusalResult(
+  installSurface: UpdateInstallSurface,
+  outcome: "error" | "skipped",
+  reason: string,
+  beforeVersion?: string | null,
+): UpdateRunResult {
+  return {
+    status: outcome,
+    mode: installSurface.mode,
+    ...(installSurface.root ? { root: installSurface.root } : {}),
+    ...(beforeVersion ? { before: { version: beforeVersion } } : {}),
+    reason,
+    steps: [],
+    durationMs: 0,
+  };
+}
+
 export function retainUpdateRequesterAuthority(
   requester: UpdateRequester | undefined,
   authority: PreparedCommandOwnerAuthority | undefined,
@@ -164,6 +183,27 @@ export function retainUpdateRequesterAuthority(
       }
     },
   };
+}
+
+/** Explicit targets cannot switch installation method or Git upstream during admission. */
+export function checkUpdateTarget(
+  target: UpdateRunParams["target"],
+  admission: Awaited<ReturnType<typeof resolveGatewayUpdateAdmission>>,
+  channel: string,
+): string | undefined {
+  const { installSurface, status } = admission;
+  if (target?.kind === "package") {
+    return installSurface.kind === "global" ? undefined : "unsupported-update-target";
+  }
+  if (!target) {
+    return undefined;
+  }
+  if (installSurface.kind !== "git" || channel !== "dev") {
+    return "unsupported-update-target";
+  }
+  return target.upstreamRef === status.git?.upstream
+    ? undefined
+    : "update-target-upstream-mismatch";
 }
 
 export async function resolveGatewayUpdateAdmission(runId: string, timeoutMs?: number) {

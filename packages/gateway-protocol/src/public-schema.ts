@@ -618,6 +618,7 @@ export {
   ChatToolTitlesParamsSchema,
   ChatToolTitlesResultSchema,
   UpdateRunParamsSchema,
+  PackageUpdateTargetSchema,
   UpdateRunRecordSchema,
   UpdateRunResultSchema,
   UpdateRunsGetParamsSchema,

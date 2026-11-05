@@ -443,6 +443,92 @@ describe("update.run campaign ownership", () => {
     );
   });
 
+  describe("explicit package target binding", () => {
+    const target = {
+      kind: "package",
+      path: "/reviewed/openclaw-custom.tgz",
+      version: "2.0.0",
+      buildId: "reviewed-custom-build",
+      sha256: "a".repeat(64),
+    };
+
+    beforeEach(() => {
+      updateChannel = "beta";
+      adoptCampaignMock.mockReturnValue({ status: "absent" });
+      detectRespawnSupervisorMock.mockReturnValue("launchd");
+    });
+
+    it("keeps the complete reviewed identity through handoff without selecting or saving a channel", async () => {
+      mockPackageInstallSurface("global");
+
+      const response = await captureUpdateRun({ target });
+
+      expect(response?.ok).toBe(true);
+      expect(adoptCampaignMock).toHaveBeenCalledWith(target);
+      expect(startManagedServiceUpdateHandoffMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          packageTarget: target,
+          meta: expect.objectContaining({ target: "version 2.0.0 build reviewed-custom-build" }),
+        }),
+      );
+      const handoff = startManagedServiceUpdateHandoffMock.mock.calls[0]?.[0];
+      expect(handoff).not.toHaveProperty("tag");
+      expect(handoff).not.toHaveProperty("channel");
+      expect(handoff).not.toHaveProperty("devTarget");
+    });
+
+    it.each([
+      ["mismatch", "update-target-campaign-mismatch"],
+      ["applying", "update-campaign-applying"],
+    ] as const)(
+      "preserves a %s campaign and refuses the artifact before handoff",
+      async (status, reason) => {
+        mockPackageInstallSurface("global");
+        adoptCampaignMock.mockReturnValueOnce({ status });
+
+        const response = await captureUpdateRun({ target });
+
+        expect(response).toMatchObject({ ok: false, result: { status: "error", reason } });
+        expect(adoptCampaignMock).toHaveBeenCalledWith(target);
+        expectNoUpdateMutation();
+        expect(clearCampaignMock).not.toHaveBeenCalled();
+      },
+    );
+
+    it("refuses an artifact on a Git installation before campaign adoption", async () => {
+      mockGitInstallStatus("a".repeat(40));
+
+      const response = await captureUpdateRun({ target });
+
+      expect(response).toMatchObject({
+        ok: false,
+        result: { status: "error", reason: "unsupported-update-target" },
+      });
+      expectNoUpdateMutation();
+      expect(adoptCampaignMock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { ...target, path: "relative.tgz" },
+      { ...target, version: "latest" },
+      { ...target, buildId: "" },
+      { ...target, sha256: "a".repeat(63) },
+      { ...target, extra: true },
+    ])("refuses malformed artifact identity before update admission: %j", async (invalidTarget) => {
+      const respond = vi.fn();
+
+      await invokeUpdateRun({ target: invalidTarget }, respond);
+
+      expect(respond).toHaveBeenCalledWith(
+        false,
+        undefined,
+        expect.objectContaining({ code: "INVALID_REQUEST" }),
+      );
+      expectNoUpdateMutation();
+      expect(adoptCampaignMock).not.toHaveBeenCalled();
+    });
+  });
+
   it("uses the prepared Git checkout instead of process artifacts", async () => {
     adoptCampaignMock.mockReturnValueOnce({ status: "absent" });
     resolveStartupInstallStatusMock.mockResolvedValueOnce({

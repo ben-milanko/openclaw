@@ -1,6 +1,9 @@
 // Coordinates the process-local idle/countdown window before an automatic update.
 import { randomUUID } from "node:crypto";
-import type { UpdateScheduleState } from "../../packages/gateway-protocol/src/index.js";
+import type {
+  PackageUpdateTarget,
+  UpdateScheduleState,
+} from "../../packages/gateway-protocol/src/index.js";
 import { trackAsyncWork } from "../shared/async-work-scope.js";
 import {
   createGatewayActiveWorkSnapshot,
@@ -132,7 +135,9 @@ export class UpdateCampaignController {
     }
   }
 
-  adopt(expectedTarget?: TrackedDevUpdateTarget): UpdateCampaignAdoptionResult {
+  adopt(
+    expectedTarget?: TrackedDevUpdateTarget | PackageUpdateTarget,
+  ): UpdateCampaignAdoptionResult {
     const campaign = this.campaign;
     const target = this.target;
     if (!campaign || !target) {
@@ -143,7 +148,9 @@ export class UpdateCampaignController {
     }
     if (
       expectedTarget &&
-      (target.kind !== "git" ||
+      // Registry campaigns carry only a version, never the reviewed artifact's digest.
+      ("kind" in expectedTarget ||
+        target.kind !== "git" ||
         target.upstreamRef !== expectedTarget.upstreamRef ||
         target.upstreamSha !== expectedTarget.upstreamSha)
     ) {

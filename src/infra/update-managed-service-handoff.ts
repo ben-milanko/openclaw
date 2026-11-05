@@ -45,6 +45,7 @@ import {
   formatManagedServiceUpdateCommand,
   resolveManagedServiceCliArgv,
   resolveUpdateCliArgv,
+  resolveManagedServiceUpdateCommandOptions,
 } from "./update-managed-service-handoff-command.js";
 import {
   createHandoffLineReader,
@@ -1233,14 +1234,7 @@ async function spawnManagedServiceUpdateHandoff(
     `openclaw-update-failure-${randomUUID()}.json`,
   );
   const logPath = path.join(dir, "handoff.log");
-  const commandOptions = {
-    acceptCapabilities: params.acceptCapabilities,
-    admission: params.admission,
-    reapplyLocalOverrides: params.reapplyLocalOverrides,
-    timeoutMs: params.timeoutMs,
-    channel: params.channel,
-    tag: params.tag,
-  };
+  const commandOptions = resolveManagedServiceUpdateCommandOptions(params);
   const commandRuntime = {
     execPath: handoffNodeExecutable,
     argv1: resolveOpenClawCliEntryPath(params.argv1 ?? process.argv[1]),

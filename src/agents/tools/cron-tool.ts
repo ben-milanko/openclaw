@@ -327,9 +327,9 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
               opts.creatorToolAllowlistCaptureRef.value.source === "final-executable-surface"
                 ? {
                     cronToolsAllowCapture: "final-executable-surface" as const,
-                    ...(creatorExecToolTarget ? { cronExecToolTarget: creatorExecToolTarget } : {}),
                   }
                 : {}),
+              ...(creatorExecToolTarget ? { cronExecToolTarget: creatorExecToolTarget } : {}),
             }
           : undefined;
 

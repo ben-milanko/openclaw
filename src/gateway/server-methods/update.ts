@@ -74,6 +74,8 @@ import { parseRestartRequestParams } from "./restart-request.js";
 import type { GatewayRequestHandlers } from "./types.js";
 import {
   admitGatewayUpdateRequest,
+  checkUpdateTarget,
+  createGatewayUpdateRefusalResult,
   retainUpdateRequesterAuthority,
   createUnexpectedUpdateFailureResult,
   recordHandoffFailure,
@@ -95,6 +97,7 @@ export const updateHandlers: GatewayRequestHandlers = {
     if (!params) {
       return;
     }
+    const packageTarget = params.target?.kind === "package" ? params.target : undefined;
     const actor = resolveControlPlaneActor(client);
     const {
       sessionKey: rawSessionKey,
@@ -181,7 +184,11 @@ export const updateHandlers: GatewayRequestHandlers = {
       trigger,
       origin,
       before: { version: VERSION },
-      ...(params.target ? { target: { kind: "git", sha: params.target.upstreamSha } } : {}),
+      ...(params.target?.kind === "git"
+        ? { target: { kind: "git", sha: params.target.upstreamSha } }
+        : packageTarget
+          ? { target: { kind: "package", version: packageTarget.version } }
+          : {}),
     });
     const runId = run.runId;
     const warn = (message: string) => context?.logGateway?.warn(message);
@@ -277,23 +284,11 @@ export const updateHandlers: GatewayRequestHandlers = {
     };
     try {
       const configChannel = normalizeUpdateChannel(config.update?.channel);
-      const { status, installSurface } = await resolveGatewayUpdateAdmission(runId, timeoutMs);
+      const admission = await resolveGatewayUpdateAdmission(runId, timeoutMs);
+      const { status, installSurface } = admission;
       const installRoot = installSurface.root;
       result.mode = installSurface.mode;
       result.root = installRoot;
-      const refusedUpdate = (
-        outcome: "error" | "skipped",
-        reason: string,
-        beforeVersion?: string | null,
-      ): UpdateRunResult => ({
-        status: outcome,
-        mode: installSurface.mode,
-        ...(installRoot ? { root: installRoot } : {}),
-        ...(beforeVersion ? { before: { version: beforeVersion } } : {}),
-        reason,
-        steps: [],
-        durationMs: 0,
-      });
       if (installSurface.kind === "immutable") {
         reportImmutableGatewayUpdateRefusal(runId, installSurface, respond);
         return;
@@ -304,18 +299,12 @@ export const updateHandlers: GatewayRequestHandlers = {
         installKind: status.installKind,
         git: status.git,
       }).channel;
-      const explicitDevTarget = params.target
-        ? devUpdateTargetFromGitTarget(params.target)
-        : undefined;
-      let targetFailureReason =
-        explicitDevTarget && (installSurface.kind !== "git" || effectiveChannel !== "dev")
-          ? "unsupported-update-target"
-          : explicitDevTarget && explicitDevTarget.upstreamRef !== status.git?.upstream
-            ? "update-target-upstream-mismatch"
-            : undefined;
+      const explicitDevTarget =
+        params.target?.kind === "git" ? devUpdateTargetFromGitTarget(params.target) : undefined;
+      let targetFailureReason = checkUpdateTarget(params.target, admission, effectiveChannel);
       const adoption = targetFailureReason
         ? undefined
-        : updateLifecycle.campaign?.adopt(explicitDevTarget);
+        : updateLifecycle.campaign?.adopt(packageTarget ?? explicitDevTarget);
       if (adoption?.status === "mismatch") {
         targetFailureReason = "update-target-campaign-mismatch";
       } else if (adoption?.status === "applying") {
@@ -333,6 +322,7 @@ export const updateHandlers: GatewayRequestHandlers = {
           ? adoptedCampaign.target.version.trim() || undefined
           : undefined;
       const devTarget = explicitDevTarget ?? adoptedDevTarget;
+      const packageVersion = packageTarget?.version ?? adoptedPackageTargetVersion;
       recordUpdateRunPhase(runId, "requested", {
         ...(adoptedCampaign
           ? { trigger: "campaign", origin: { campaignId: adoptedCampaign.campaignId } }
@@ -341,7 +331,7 @@ export const updateHandlers: GatewayRequestHandlers = {
           channel: effectiveChannel,
           kind: installSurface.kind === "git" ? "git" : "package",
           ...(devTarget ? { sha: devTarget.upstreamSha } : {}),
-          ...(adoptedPackageTargetVersion ? { version: adoptedPackageTargetVersion } : {}),
+          ...(packageVersion ? { version: packageVersion } : {}),
         },
       });
       if (adoptedCampaign) {
@@ -353,14 +343,14 @@ export const updateHandlers: GatewayRequestHandlers = {
       }
       sentinelMeta.target = devTarget
         ? `${devTarget.upstreamRef}@${devTarget.upstreamSha}`
-        : adoptedPackageTargetVersion
-          ? `version ${adoptedPackageTargetVersion}`
+        : packageVersion
+          ? `version ${packageVersion}${packageTarget ? ` build ${packageTarget.buildId}` : ""}`
           : `${effectiveChannel} channel`;
       const acknowledgeUpdate = async (beforeVersion: string | null) => {
         if (refuseUnauthorizedChatUpdate()) {
           return false;
         }
-        const targetVersion = adoptedPackageTargetVersion ?? getUpdateAvailable()?.latestVersion;
+        const targetVersion = packageVersion ?? getUpdateAvailable()?.latestVersion;
         const acknowledgedRun = recordUpdateRunPhase(runId, "requested", {
           before: { version: beforeVersion ?? VERSION },
           ...(targetVersion ? { target: { version: targetVersion } } : {}),
@@ -412,18 +402,20 @@ export const updateHandlers: GatewayRequestHandlers = {
             ? effectiveChannel
             : (configChannel ?? undefined);
       if (targetFailureReason) {
-        result = refusedUpdate("error", targetFailureReason);
+        result = createGatewayUpdateRefusalResult(installSurface, "error", targetFailureReason);
       } else if (installSurface.kind === "missing") {
-        result = refusedUpdate("error", "not-openclaw-root");
+        result = createGatewayUpdateRefusalResult(installSurface, "error", "not-openclaw-root");
       } else if (isGatewayExternallySupervised()) {
         const beforeVersion = await readPackageVersion(installSurface.root);
-        result = refusedUpdate(
+        result = createGatewayUpdateRefusalResult(
+          installSurface,
           "skipped",
           EXTERNAL_SUPERVISOR_UPDATE_REQUIRED_REASON,
           beforeVersion,
         );
       } else if (installSurface.kind === "package-root") {
-        result = refusedUpdate(
+        result = createGatewayUpdateRefusalResult(
+          installSurface,
           "skipped",
           resolveUnmanagedUpdateInstallReason(),
           await readPackageVersion(installSurface.root),
@@ -435,7 +427,8 @@ export const updateHandlers: GatewayRequestHandlers = {
         const beforeVersion = installSurface.root
           ? await readPackageVersion(installSurface.root)
           : null;
-        result = refusedUpdate(
+        result = createGatewayUpdateRefusalResult(
+          installSurface,
           "skipped",
           installSurface.kind === "global" ? "restart-unavailable" : "restart-disabled",
           beforeVersion,
@@ -523,8 +516,12 @@ export const updateHandlers: GatewayRequestHandlers = {
             timeoutMs,
             restartDrainTimeoutMs: resolveGatewayRestartDeferralTimeoutMs(),
             restartDelayMs: requestedRestartDelayMs === undefined ? 0 : restartDelayMs,
-            ...(handoffChannel ? { channel: handoffChannel } : {}),
-            ...(adoptedPackageTargetVersion ? { tag: adoptedPackageTargetVersion } : {}),
+            ...(packageTarget
+              ? { packageTarget }
+              : {
+                  ...(handoffChannel ? { channel: handoffChannel } : {}),
+                  ...(adoptedPackageTargetVersion ? { tag: adoptedPackageTargetVersion } : {}),
+                }),
             ...(devTarget ? { devTarget } : {}),
             meta: sentinelMeta,
             handoffId,
@@ -590,7 +587,11 @@ export const updateHandlers: GatewayRequestHandlers = {
           result = recordHandoffFailure(
             runId,
             err,
-            refusedUpdate("error", "managed-service-handoff-failed"),
+            createGatewayUpdateRefusalResult(
+              installSurface,
+              "error",
+              "managed-service-handoff-failed",
+            ),
             warn,
             stage,
           );

@@ -1,5 +1,7 @@
 import path from "node:path";
+import type { PackageUpdateTarget } from "../../packages/gateway-protocol/src/schema/config.js";
 import { formatCliCommand } from "../cli/command-format.js";
+import { quoteCliArg } from "../cli/quote-cli-arg.js";
 import { resolveRuntimeArgs } from "./runtime-worker-url.js";
 import type { UpdateChannel } from "./update-channels.js";
 
@@ -7,6 +9,7 @@ export function resolveUpdateCliArgv(params: {
   timeoutMs?: number;
   channel?: UpdateChannel;
   tag?: string;
+  packageTarget?: PackageUpdateTarget;
   acceptCapabilities?: boolean;
   admission?: "auto" | "installed";
   reapplyLocalOverrides?: boolean;
@@ -20,12 +23,31 @@ export function resolveUpdateCliArgv(params: {
     ...(params.reapplyLocalOverrides ? ["--reapply-local-overrides"] : []),
     ...(params.acceptCapabilities ? ["--accept-capabilities"] : []),
     ...(params.admission ? ["--admission", params.admission] : []),
-    ...(params.channel ? ["--channel", params.channel] : []),
-    ...(params.tag ? ["--tag", params.tag] : []),
+    ...(params.packageTarget
+      ? ["--package-target", JSON.stringify(params.packageTarget)]
+      : [
+          ...(params.channel ? ["--channel", params.channel] : []),
+          ...(params.tag ? ["--tag", params.tag] : []),
+        ]),
     ...(typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs)
       ? ["--timeout", String(Math.max(1, Math.ceil(params.timeoutMs / 1000)))]
       : []),
   ]);
+}
+
+/** Share the exact serializable command options between handoff argv and its label. */
+export function resolveManagedServiceUpdateCommandOptions(
+  params: Parameters<typeof resolveUpdateCliArgv>[0],
+) {
+  return {
+    acceptCapabilities: params.acceptCapabilities,
+    admission: params.admission,
+    reapplyLocalOverrides: params.reapplyLocalOverrides,
+    timeoutMs: params.timeoutMs,
+    channel: params.channel,
+    tag: params.tag,
+    packageTarget: params.packageTarget,
+  };
 }
 
 export function resolveManagedServiceCliArgv(
@@ -50,6 +72,7 @@ export function formatManagedServiceUpdateCommand(
   return formatCliCommand(
     resolveUpdateCliArgv(params ?? {})
       .toSpliced(3, 1)
+      .map(quoteCliArg)
       .join(" "),
     env,
   );
