@@ -97,6 +97,85 @@ function nestedFixture(
 }
 
 describe("tsdown checkout declaration resolution", () => {
+  it.concurrent("keeps imported package types while excluding unrelated ambient graphs", ({
+    command,
+  }) =>
+    command.lifetime.run(async () => {
+      const { root, write } = containedFixture(command);
+      const config = JSON.parse(fs.readFileSync(path.join(root, "tsconfig.json"), "utf8"));
+      // Match the real root's ambient discovery; package entries stay deliberately tiny.
+      config.include = JSON.parse(fs.readFileSync("tsconfig.json", "utf8")).include;
+      write("tsconfig.json", JSON.stringify(config));
+      write(
+        "packages/gateway-protocol/src/index.ts",
+        `
+        import type { Marker } from "selected-dependency";
+        export function dependencyOrigin(value: Marker) { return value.origin; }
+      `,
+      );
+      write(
+        "node_modules/selected-dependency/package.json",
+        JSON.stringify({
+          name: "selected-dependency",
+          version: "1.0.0",
+          type: "module",
+          types: "index.d.ts",
+        }),
+      );
+      write(
+        "node_modules/selected-dependency/index.d.ts",
+        'export interface Marker { origin: "selected" }',
+      );
+      write(
+        "ui/unrelated-ambient.d.ts",
+        'import type { Hidden } from "./unrelated.js"; declare global { const unrelated: Hidden; }',
+      );
+      write(
+        "ui/unrelated.ts",
+        'export const invalid: number = "unselected"; export interface Hidden {}',
+      );
+      const result = await runFixtureModule(
+        command,
+        root,
+        `
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { build } from "tsdown";
+import configs from "./tsdown.config.ts";
+import { readDeclarationBuildInputs } from "./scripts/lib/tsdown-declaration-boundary.mts";
+const root = process.cwd();
+const config = configs.find(config => config.outDir === "packages/gateway-protocol/dist");
+assert.ok(config);
+const original = config.hooks;
+const { bundles } = await build({
+  ...config, config: false, cwd: root, clean: false, logLevel: "silent", concurrency: 1,
+  entry: "packages/gateway-protocol/src/index.ts",
+  hooks: async hooks => {
+    await original(hooks);
+    hooks.hook("build:done", ({ options }) => {
+      const { inputs } = readDeclarationBuildInputs(options);
+      assert.ok(inputs.has(path.join(root, "node_modules/selected-dependency/index.d.ts")));
+      assert.equal(inputs.has(path.join(root, "ui/unrelated-ambient.d.ts")), false);
+      assert.equal(inputs.has(path.join(root, "ui/unrelated.ts")), false);
+    });
+  },
+});
+try {
+  const declaration = fs.readFileSync("packages/gateway-protocol/dist/index.d.mts", "utf8");
+  assert.match(declaration, /dependencyOrigin\\(value: Marker\\): "selected"/);
+} finally {
+  for (const bundle of bundles) await bundle[Symbol.asyncDispose]();
+}
+console.log("package dependency types retained without unrelated ambient graph");
+`,
+      );
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      expect(result.stdout).toContain(
+        "package dependency types retained without unrelated ambient graph",
+      );
+    }));
+
   it.concurrent("bounds standalone package builds while preserving public declarations and sibling outputs", ({
     command,
   }) =>
@@ -584,7 +663,7 @@ const owner = ${JSON.stringify(owner)};
 const config = owner === "AI" ? ai : configs.find(config => config.outDir ===
   (owner === "node" ? "packages/agent-core/dist" : "packages/gateway-protocol/dist"));
 assert.ok(config);
-assert.equal(config.dts, ${!dts});
+assert.deepEqual(config.dts, ${dts ? "false" : owner === "AI" ? "true" : '{ tsconfig: "tsconfig.packages.json" }'});
 // The build API's cwd, rather than the importing process's cwd, owns inputs.
 process.chdir(path.dirname(root));
 let finishedRuntime;
