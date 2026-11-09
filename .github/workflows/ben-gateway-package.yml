@@ -1,21 +1,20 @@
 name: Ben Gateway package
 
 on:
-  pull_request:
-    branches: [dev/ben-custom]
-    types: [opened, reopened, synchronize, ready_for_review]
+  push:
+    branches: ["ci/ben-gateway-package-*"]
     paths: [.github/workflows/ben-gateway-package.yml]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ben-gateway-package-${{ github.event.pull_request.number }}
+  group: ben-gateway-package-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   package:
-    if: github.repository == 'ben-milanko/openclaw' && github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    if: github.repository == 'ben-milanko/openclaw'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
