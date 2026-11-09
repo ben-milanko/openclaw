@@ -7,11 +7,14 @@ import { observeSqliteReadSql } from "../../test/helpers/sqlite-statement-execut
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { AsyncWorkScope } from "../shared/async-work-scope.js";
 import { createOpenClawDatabaseMaintenanceScope } from "../state/openclaw-state-db-async-lifecycle.js";
+import { assertExistingOpenClawStateRuntimeSchema } from "../state/openclaw-state-db-existing-schema.js";
+import { invalidateOpenClawStateRuntimeIntegrity } from "../state/openclaw-state-db-integrity-admission.js";
 import * as stateReads from "../state/openclaw-state-db-readonly.js";
 import {
   withDisposableOpenClawStateReads,
   withOpenClawStateDatabaseReadSnapshot,
 } from "../state/openclaw-state-db-readonly.js";
+import { ensureSecretStoreSchema } from "../state/openclaw-state-db-schema-additive.js";
 import {
   closeOpenClawStateDatabaseAsync,
   closeOpenClawStateDatabaseForTest,
@@ -20,8 +23,12 @@ import {
 } from "../state/openclaw-state-db.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
 import { observeMainThreadSql } from "../test-utils/main-thread-sql-spies.test-support.js";
+import { requireNativeSqliteDatabase } from "../test-utils/native-sqlite.js";
 import { createExecApprovalPolicySnapshot } from "./exec-approvals-allow-always.js";
-import { commitExecAuthorizationLocked } from "./exec-approvals-authorization.js";
+import {
+  commitExecAuthorizationLocked,
+  recordAllowlistMatchesUse,
+} from "./exec-approvals-authorization.js";
 import { prepareCronExecHostPolicyUse } from "./exec-approvals-cron-policy.js";
 import { loadMcpToolGrants } from "./exec-approvals-mcp.js";
 import { execApprovalsPublication } from "./exec-approvals-publication.js";
@@ -255,7 +262,45 @@ it("drains an accepted authorization when maintenance closes before batch dispat
     });
   });
   await Promise.all([expect(pending).resolves.toBeTypeOf("function"), maintenance.close()]);
+  expect(await pending).toThrow("scope is closed");
 });
+
+it.each(["during preparation", "after preparation"] as const)(
+  "revokes exec integrity loss %s without renewing authority",
+  async (timing) => {
+    const { env } = fixture();
+    const source = seed(env);
+    const context = captureOpenClawStateWorkerContext({ env });
+    const native = requireNativeSqliteDatabase(source.db);
+    assertExistingOpenClawStateRuntimeSchema(native, source.path, context.stateIntegrity);
+    const pending = recordAllowlistMatchesUse(
+      {
+        agentId: "main",
+        matches: [],
+        command: "echo synthetic",
+        authorization: {
+          source: "current-policy",
+          security: "allowlist",
+          ask: "on-miss",
+          allowlistSatisfied: true,
+        },
+      },
+      context,
+    );
+    let assertCurrent: (() => void) | undefined;
+    if (timing === "after preparation") {
+      assertCurrent = await pending;
+      expect(assertCurrent).not.toThrow();
+      runOpenClawStateWriteTransaction(() => ensureSecretStoreSchema(source.db), { env });
+      expect(assertCurrent).not.toThrow();
+    }
+    invalidateOpenClawStateRuntimeIntegrity(native);
+    assertCurrent ??= await pending;
+    // The physical proof revokes independently of host-side lifecycle notification.
+    expect(context.admission.assertCurrent).not.toThrow();
+    expect(assertCurrent).toThrow("Exec approval integrity admission changed before execution");
+  },
+);
 
 it("loads exact-agent policy grants from a fresh source without caller SQLite", async () => {
   expect(isMainThread).toBe(true);
