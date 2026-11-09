@@ -61,7 +61,7 @@ import { resolvePinnedMainDmOwnerFromAllowlist } from "openclaw/plugin-sdk/secur
 import { normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { enqueueSystemEvent } from "openclaw/plugin-sdk/system-event-runtime";
 import { normalizeE164, truncateUtf16Safe } from "openclaw/plugin-sdk/text-utility-runtime";
-import { resolveSignalReplyToMode } from "../accounts.js";
+import { resolveSignalAccountConfig, resolveSignalReplyToMode } from "../accounts.js";
 import {
   maybeResolveSignalApprovalReaction,
   resolveSignalApprovalConversationKey,
@@ -87,6 +87,7 @@ import { sendReactionSignal, type SignalReactionOpts } from "../send-reactions.j
 import { sendMessageSignal, sendReadReceiptSignal, sendTypingSignal } from "../send.js";
 import type { SignalIngressLifecycle } from "../signal-ingress.js";
 import { handleSignalDirectMessageAccess, resolveSignalAccessState } from "./access-policy.js";
+import { filterSignalAssistantReply, isSignalAssistantRequest } from "./assistant-request.js";
 import {
   createSignalPendingInboundRegistry,
   resolveSignalControlLaneKey,
@@ -157,6 +158,8 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
 
   async function handleSignalInboundMessage(entry: SignalInboundEntry) {
     const { cfg } = entry;
+    const assistantRequestsOnly =
+      resolveSignalAccountConfig(cfg, deps.accountId).assistantRequestPrefixes !== undefined;
     const fromLabel = formatInboundFromLabel({
       isGroup: entry.isGroup,
       groupLabel: entry.groupName ?? undefined,
@@ -291,6 +294,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       channelIngress: entry.channelIngress,
       media,
       extra: {
+        ...(assistantRequestsOnly ? { SourceReplyExpectation: "optional" } : {}),
         GroupSubject: entry.isGroup ? (entry.groupName ?? undefined) : undefined,
         ReplyThreading: replyThreading,
       },
@@ -312,6 +316,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       accountId: route.accountId,
     });
     const shouldSendStatusReaction = Boolean(
+      !assistantRequestsOnly &&
       ackReaction &&
       shouldAckReaction({
         scope: cfg.messages?.ackReactionScope,
@@ -380,7 +385,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
         accountId: route.accountId,
         typing: {
           start: async () => {
-            if (!ctxPayload.To) {
+            if (assistantRequestsOnly || !ctxPayload.To) {
               return;
             }
             await sendTypingSignal(ctxPayload.To, {
@@ -414,6 +419,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       propagateRetryableNoSendFailure: true,
       humanDelay: resolveHumanDelayConfig(cfg, route.agentId),
       typingCallbacks,
+      ...(assistantRequestsOnly ? { beforeDeliver: filterSignalAssistantReply } : {}),
     };
     const delivery: ChannelInboundTurnPlan["delivery"] = {
       deliver: async (payload, _info) => {
@@ -910,6 +916,15 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
     const messageText = normalizedMessage.trim();
     const groupId = dataMessage?.groupInfo?.groupId ?? reaction?.groupInfo?.groupId ?? undefined;
     const isGroup = Boolean(groupId);
+    const requestPrefixes = resolveSignalAccountConfig(
+      cfg,
+      deps.accountId,
+    ).assistantRequestPrefixes;
+    // This personal-account mode gates both DMs and groups before pairing,
+    // reactions, media, commands, or model dispatch can produce an automatic reply.
+    if (requestPrefixes !== undefined && !isSignalAssistantRequest(rawMessage, requestPrefixes)) {
+      return;
+    }
     const hasControlCommandInMessage = isControlCommandMessage(messageText, cfg);
 
     const senderDisplay = formatSignalSenderDisplay(sender);
@@ -929,6 +944,9 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       });
     const accessDecision = await resolveChannelIngress();
     const { senderAccess, commandAccess } = accessDecision;
+    if (requestPrefixes !== undefined && senderAccess.decision !== "allow") {
+      return;
+    }
     const quoteText = normalizeOptionalString(dataMessage?.quote?.text) ?? "";
     const { contextVisibilityMode, quoteSenderAllowed, visibleQuoteText, visibleQuoteSender } =
       resolveSignalQuoteContext({
@@ -1047,7 +1065,9 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
     const signalToRaw = isGroup ? `group:${groupId}` : `signal:${senderRecipient}`;
     const signalTo = normalizeSignalMessagingTarget(signalToRaw) ?? signalToRaw;
     const mentionRegexes = buildMentionRegexes(cfg, route.agentId);
-    const textWasMentioned = isGroup && matchesMentionPatterns(messageText, mentionRegexes);
+    const textWasMentioned =
+      isGroup &&
+      (requestPrefixes !== undefined || matchesMentionPatterns(messageText, mentionRegexes));
     const nativeMentionFacts = resolveSignalMentionFacts(deps, rawMessage, dataMessage?.mentions);
     const wasMentioned = isGroup && (textWasMentioned || nativeMentionFacts.mentionsBot);
     const requireMention =
@@ -1203,7 +1223,12 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       return;
     }
 
-    if (deps.sendReadReceipts && !deps.readReceiptsViaDaemon && !isGroup) {
+    if (
+      requestPrefixes === undefined &&
+      deps.sendReadReceipts &&
+      !deps.readReceiptsViaDaemon &&
+      !isGroup
+    ) {
       if (inboundTimestamp) {
         try {
           await sendReadReceiptSignal(`signal:${senderRecipient}`, inboundTimestamp, {

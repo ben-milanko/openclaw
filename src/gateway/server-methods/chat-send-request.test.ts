@@ -265,7 +265,12 @@ describe("normalizeChatSendRequest", () => {
         await normalizeChatSendRequest({
           params: validParams({
             message,
-            intent: { kind: "session-goal-start", version: 1, issuedAtMs: Date.now() },
+            intent: {
+              kind: "session-goal-start",
+              version: 1,
+              issuedAtMs: Date.now(),
+              maxContinuationTurns: 3,
+            },
           }),
           client: null,
         }),
@@ -277,7 +282,12 @@ describe("normalizeChatSendRequest", () => {
           stopCommand: false,
           turnKind: "main",
           suppressCommandInterpretation: true,
-          goalOperation: { action: "start", objective: message, operationId: "request-1" },
+          goalOperation: {
+            action: "start",
+            objective: message,
+            operationId: "request-1",
+            maxContinuationTurns: 3,
+          },
         },
       });
     },
@@ -296,6 +306,9 @@ describe("normalizeChatSendRequest", () => {
     { idempotencyKey: "x".repeat(129) },
     { intent: { kind: "session-goal-resume", version: 1, issuedAtMs: 1 } },
     { intent: { kind: "session-goal-start", version: 2, issuedAtMs: 1 } },
+    ...[0, 101, 1.5].map((maxContinuationTurns) => ({
+      intent: { kind: "session-goal-start", version: 1, issuedAtMs: 1, maxContinuationTurns },
+    })),
     { intent: { kind: "session-goal-start", version: 1 } },
     {
       intent: { kind: "session-goal-start", version: 1, issuedAtMs: 1, objective: "second target" },

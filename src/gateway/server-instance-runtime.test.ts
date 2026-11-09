@@ -171,6 +171,7 @@ describe("createGatewayInstanceRuntime", () => {
       let releasePlatformDispatch: (() => void) | undefined;
       let platformDispatchHold: Promise<void> | undefined;
       const visibleSend = vi.fn();
+      let allowRecoveryNotice = false;
       const sendText = vi.fn(async (ctx: { onPlatformSendDispatch?: () => Promise<void> }) => {
         await platformDispatchHold;
         await ctx.onPlatformSendDispatch?.();
@@ -190,6 +191,7 @@ describe("createGatewayInstanceRuntime", () => {
           blurb: "Signal-shaped recovery test plugin.",
         },
         capabilities: { chatTypes: ["direct"] },
+        messaging: { allowRecoveryNotice: () => allowRecoveryNotice },
         config: {
           listAccountIds: () => ["work"],
           resolveAccount: () => ({}),
@@ -232,6 +234,10 @@ describe("createGatewayInstanceRuntime", () => {
           text: "Recovery notice",
           idempotencyKey,
         } as const;
+        expect(await runtime.recovery.sendRecoveryNotice(notice)).toEqual({ suppressed: true });
+        expect(await findDeliveryIntentOwner(idempotencyKey)).toBeNull();
+        expect(sendText).not.toHaveBeenCalled();
+        allowRecoveryNotice = true;
         await runtime.recovery.sendRecoveryNotice(notice);
         await runtime.recovery.sendRecoveryNotice(notice);
 
@@ -287,6 +293,23 @@ describe("createGatewayInstanceRuntime", () => {
         expect(await findDeliveryIntentOwner(guardedDurableNotice.idempotencyKey)).toMatchObject({
           status: "completed",
         });
+
+        platformDispatchHold = new Promise<void>((resolve) => {
+          releasePlatformDispatch = resolve;
+        });
+        const revokedNotice = runtime.recovery.sendRecoveryNotice({
+          ...notice,
+          idempotencyKey: "main-session-restart-recovery:run-4:policy-revoked",
+          liveOnly: true,
+          isCurrent: () => true,
+        });
+        await vi.waitFor(() => expect(sendText).toHaveBeenCalledTimes(4));
+        allowRecoveryNotice = false;
+        releasePlatformDispatch?.();
+        await expect(revokedNotice).rejects.toThrow(
+          "Recovery notice owner retired before delivery",
+        );
+        expect(visibleSend).toHaveBeenCalledTimes(2);
       } finally {
         runtime.close();
         restoreActivePluginRegistrySnapshot(pluginRegistrySnapshot);

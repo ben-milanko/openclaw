@@ -1,5 +1,5 @@
 ---
-summary: "Read public GitHub issues, pull requests, commits, and comments beside chat"
+summary: "Read GitHub issues, pull requests, commits, and comments beside chat"
 title: "GitHub"
 doc-schema-version: 1
 read_when:
@@ -9,7 +9,7 @@ read_when:
 
 # GitHub
 
-The bundled GitHub plugin adds public-repository link previews and a read-only
+The bundled GitHub plugin adds GitHub link previews and a read-only
 reader to the [Control UI](/web/control-ui). It is separate from the
 [GitHub Copilot model provider](/providers/github-copilot).
 
@@ -30,8 +30,10 @@ To intentionally keep it off and silence that notice, set
 
 ## Read an item beside chat
 
-The plugin is enabled by default. Connect to the Gateway, then click a public
-GitHub issue, pull request, or commit link in chat. The reader opens beside the
+The plugin is enabled by default. Connect to the Gateway, then click a supported
+GitHub issue, pull request, or commit link in chat. Gateway administrators can also
+read private repositories accessible to the selected GitHub credential. Other
+viewers can read only public repositories. The reader opens beside the
 conversation with a GitHub icon and an **Open on GitHub** link. Hover or focus
 an issue or pull request link to see its preview. Login, OAuth, profile,
 repository, and other general GitHub pages remain ordinary links: neither
@@ -96,13 +98,15 @@ hovercard, and GitHub links open externally.
 
 ## Limits and unavailable content
 
-- The reader is public-only and read-only. Use **Open on GitHub** for private
-  repositories, posting comments, or merging pull requests.
+- The reader is read-only. Private repositories require an authenticated Gateway
+  administrator connection and a GitHub credential with repository access.
+  Other viewers remain public-only, including when an administrator has already
+  cached the item. Use **Open on GitHub** to post comments or merge pull requests.
 - Previews and reader documents use the selected agent’s managed GitHub identity,
   or the configured Control UI GitHub token and Gateway environment fallback when
   no managed identity is selected. Without credentials they use GitHub’s shared
-  anonymous IP quota. Authenticated documents remain public-only: the reader checks
-  repository visibility and identity before returning fresh or cached content.
+  anonymous IP quota. The reader checks repository access and the current
+  connection's authority before returning fresh or cached content.
   Identity changes abort stale requests. Attachment images remain anonymous.
 - Each comment collection is limited to 20 entries; PR discussion and inline
   review comments have separate limits. Up to 30 changed files are shown.

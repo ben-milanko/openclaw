@@ -84,6 +84,7 @@ function entry(): SessionEntry {
       tokenStart: 0,
       tokensUsed: 0,
       continuationTurns: 0,
+      maxContinuationTurns: 3,
     },
   };
 }
@@ -224,6 +225,19 @@ describe("Goal continuation eligibility", () => {
           requiresWorker: false,
         }),
       ).resolves.toBe(expected);
+    },
+  );
+
+  it.each([undefined, 0, 3] as const)(
+    "requires an unspent explicit continuation bound (%s)",
+    (limit) => {
+      const current = entry();
+      if (limit === undefined) {
+        delete current.goal!.maxContinuationTurns;
+      } else {
+        current.goal!.continuationTurns = limit;
+      }
+      expect(isGoalContinuationCurrent(identity, current)).toBe(limit === 0);
     },
   );
 

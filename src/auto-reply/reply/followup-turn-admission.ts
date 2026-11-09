@@ -498,6 +498,40 @@ export async function admitFollowupTurn(params: {
         return { kind: "skipped", reason: "goal-inactive", operation };
       }
     }
+    if (goalContinuation) {
+      if (!replySessionKey || !params.defaults.storePath) {
+        return { kind: "skipped", reason: "goal-inactive", operation };
+      }
+      const { patchSessionEntryCore } = await import("../../config/sessions/session-accessor.js");
+      let claimed = false;
+      const updated = await patchSessionEntryCore(
+        { sessionKey: replySessionKey, storePath: params.defaults.storePath },
+        (entry) => {
+          if (
+            operation.abortSignal.aborted ||
+            getFollowupQueueDepth(replySessionKey) > 0 ||
+            !isGoalContinuationCurrent(goalContinuation, entry)
+          ) {
+            return null;
+          }
+          claimed = true;
+          return {
+            goal: { ...entry.goal!, continuationTurns: entry.goal!.continuationTurns + 1 },
+          };
+        },
+        {
+          assertCommitAllowed: () => {
+            assertOperatorCurrent();
+            operation.abortSignal.throwIfAborted();
+          },
+        },
+      );
+      assertOperatorCurrent();
+      if (!claimed || !updated) {
+        return { kind: "skipped", reason: "goal-inactive", operation };
+      }
+      session.publish(updated);
+    }
     // Only a returned turn transfers presentation cleanup to the runner.
     queuedFollowupAdmitted = false;
     return { kind: "admitted", turn };

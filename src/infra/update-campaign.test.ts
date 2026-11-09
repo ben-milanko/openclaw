@@ -205,6 +205,35 @@ describe("UpdateCampaignController", () => {
     expect(apply).not.toHaveBeenCalled();
   });
 
+  it("does not adopt a version-only package campaign for a reviewed artifact at the same version", () => {
+    const controller = createController();
+    const apply = vi.fn(async () => "applied" as const);
+    const onChange = vi.fn();
+    const reviewedTarget = {
+      kind: "package" as const,
+      path: "/reviewed/openclaw.tgz",
+      version: "2.0.0",
+      buildId: "reviewed-custom-build",
+      sha256: "a".repeat(64),
+    };
+
+    expect(controller.adopt(reviewedTarget)).toEqual({ status: "absent" });
+    controller.announce({
+      target: { kind: "package", version: "2.0.0" },
+      inspect: createInspectors(() => 1),
+      apply,
+      onChange,
+    });
+    const campaign = controller.getState();
+
+    expect(controller.adopt(reviewedTarget)).toEqual({ status: "mismatch" });
+    expect(controller.getState()).toEqual(campaign);
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(apply).not.toHaveBeenCalled();
+    expect(controller.adopt()).toMatchObject({ status: "adopted", campaignId: "campaign-1" });
+    expect(controller.adopt(reviewedTarget)).toEqual({ status: "applying" });
+  });
+
   it.each([
     {
       name: "a different Git upstream",

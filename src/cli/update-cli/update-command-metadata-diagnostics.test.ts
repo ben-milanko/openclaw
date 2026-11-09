@@ -35,6 +35,7 @@ it.each([
   { manager: "npm", name: "numeric", tag: "2026.9.4", requests: ["2026.9.4"] },
   { manager: "pnpm", name: "tarball", tag: "./candidate.tgz", requests: [] },
   { manager: "pnpm", name: "moving override", requests: ["latest", "2026.9.4"] },
+  { manager: "npm", name: "pinned artifact", tag: "/fixture/reviewed.tgz", requests: [] },
 ])("resolves $manager $name with paired metadata and bounded requests", async (entry) => {
   vi.mocked(shared.resolveTargetVersion).mockRestore();
   vi.mocked(updateCheck.resolveNpmChannelTag).mockRestore();
@@ -52,7 +53,7 @@ it.each([
   });
   const env = { ...process.env, NPM_CONFIG_REGISTRY: "https://registry.example.test/" };
   const override = entry.name.includes("override");
-  if (override) {
+  if (override || entry.name === "pinned artifact") {
     vi.stubEnv("OPENCLAW_UPDATE_PACKAGE_SPEC", "openclaw@latest");
   }
   vi.mocked(updateGlobal.createGlobalInstallEnv).mockResolvedValue(env);
@@ -96,7 +97,23 @@ it.each([
   });
   vi.stubGlobal("fetch", fetch);
   try {
-    const opts = { tag: entry.tag, channel: entry.channel, dryRun: true, json: true };
+    const opts = {
+      tag: entry.tag,
+      channel: entry.channel,
+      dryRun: true,
+      json: true,
+      ...(entry.name === "pinned artifact"
+        ? {
+            packageTarget: {
+              kind: "package" as const,
+              path: entry.tag!,
+              version: "2026.9.4",
+              buildId: "reviewed-build",
+              sha256: "a".repeat(64),
+            },
+          }
+        : {}),
+    };
     const prepared = await commandRun.prepareUpdateCommand(opts);
     if (!prepared) {
       throw new Error("fixture preparation failed");
@@ -123,8 +140,8 @@ it.each([
     expect(fetch).toHaveBeenCalledTimes(manager === "pnpm" ? entry.requests.length : 0);
     if (override) {
       expect(packageUpdate.stagePackageInstallUpdate).not.toHaveBeenCalled();
-    } else if (entry.name === "tarball") {
-      expect(result).toMatchObject({ targetVersion: null, packageInstallSpec: "./candidate.tgz" });
+    } else if (entry.name === "tarball" || entry.name === "pinned artifact") {
+      expect(result).toMatchObject({ targetVersion: null, packageInstallSpec: entry.tag });
     } else {
       const beta = entry.name === "beta";
       const version = beta ? "2026.9.5-beta.1" : "2026.9.4";

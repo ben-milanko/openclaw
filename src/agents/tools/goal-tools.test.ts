@@ -110,11 +110,16 @@ describe("goal tools", () => {
     });
     const args = {
       objective: "ship global work",
+      max_continuation_turns: 3,
       ...(budget !== undefined ? { token_budget: budget } : {}),
     };
     expect(Value.Check(tool.parameters, args)).toBe(true);
     await tool.execute("call-1", args);
 
+    expect(
+      getSessionEntry({ storePath: researchStorePath, sessionKey: "global" })?.goal
+        ?.maxContinuationTurns,
+    ).toBe(3);
     const mainStorePath = resolveSessionStorePathCore(template, { agentId: "main" });
     expect(
       getSessionEntry({ storePath: researchStorePath, sessionKey: "global" })?.goal?.objective,

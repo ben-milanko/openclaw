@@ -31,6 +31,7 @@ type SessionGoalStoreOptions = {
 type CreateSessionGoalOptions = SessionGoalStoreOptions & {
   objective: string;
   tokenBudget?: number;
+  maxContinuationTurns?: number;
 };
 
 type UpdateSessionGoalStatusOptions = SessionGoalStoreOptions & {
@@ -155,7 +156,11 @@ export async function createSessionGoal(options: CreateSessionGoalOptions): Prom
     (entry) => {
       created = buildCreatedSessionGoal(
         entry,
-        { objective, tokenBudget: options.tokenBudget },
+        {
+          objective,
+          tokenBudget: options.tokenBudget,
+          maxContinuationTurns: options.maxContinuationTurns,
+        },
         now,
       );
       return { goal: created };

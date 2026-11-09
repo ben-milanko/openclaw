@@ -77,6 +77,9 @@ describe("cron creator authority grants", () => {
     expect(() => mintCronCreatorAuthorityGrant(scope)).toThrow(
       "Automation creation is not granted",
     );
+    expect(() =>
+      mintCronCreatorAuthorityGrant(scope, undefined, undefined, undefined, "requester"),
+    ).toThrow("Automation creation is not granted");
     revokeCronCreatorAuthorityRunScope(scope);
   });
   it("carries direct-local origin without claiming channel requester authority", () => {

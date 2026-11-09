@@ -315,12 +315,22 @@ export function createGatewayInstanceRuntime(
       if (closed || !options.isDispatchAvailable()) {
         throw new Error("Gateway instance dispatch unavailable for recovery notice");
       }
+      const { getLoadedChannelPlugin } = await loadRecoveryTypingAdapter();
+      const noticeAllowed = () =>
+        getLoadedChannelPlugin(payload.channel)?.messaging?.allowRecoveryNotice?.({
+          cfg: options.getContext().getRuntimeConfig(),
+          accountId: payload.accountId,
+        }) !== false;
+      if (!noticeAllowed()) {
+        return { suppressed: true };
+      }
       const { sendMessage } = await loadOutboundMessageRuntime();
       const assertNoticeCurrent = () => {
         if (
           closed ||
           !options.isDispatchAvailable() ||
-          payload.isCurrent?.(options.getContext().getRuntimeConfig()) === false
+          payload.isCurrent?.(options.getContext().getRuntimeConfig()) === false ||
+          !noticeAllowed()
         ) {
           throw new Error("Recovery notice owner retired before delivery");
         }

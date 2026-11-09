@@ -56,6 +56,10 @@ export type SignalAccountConfig = Omit<CommonChannelMessagingConfig, "mentionPat
     accountUuid?: string;
     /** Concrete transport owned by this account. Defaults to managed native signal-cli. */
     transport?: SignalTransportConfig;
+    /** Literal addressed-request prefixes (ending in colon/comma). When set, only
+     * matching DMs/groups enter the agent; automatic errors and status signals stay local.
+     * Empty means no incoming requests. Native mentions never bypass this gate. */
+    assistantRequestPrefixes?: string[];
     /** Skip downloading inbound Signal attachments. */
     ignoreAttachments?: boolean;
     /** OpenClaw-side target aliases keyed by friendly name. */

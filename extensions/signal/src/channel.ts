@@ -414,6 +414,8 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
         },
       },
       messaging: {
+        allowRecoveryNotice: ({ cfg, accountId }) =>
+          resolveSignalAccount({ cfg, accountId }).config.assistantRequestPrefixes === undefined,
         targetPrefixes: ["signal"],
         normalizeTarget: normalizeSignalMessagingTarget,
         inferTargetChatType: ({ to }) => inferSignalTargetChatType(to),
@@ -460,6 +462,11 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
       },
       heartbeat: {
         sendTyping: async ({ cfg, to, accountId }) => {
+          if (
+            resolveSignalAccount({ cfg, accountId }).config.assistantRequestPrefixes !== undefined
+          ) {
+            return;
+          }
           await (
             await loadSignalSendRuntime()
           ).sendTypingSignal(to, {
@@ -468,6 +475,11 @@ export const signalPlugin: ChannelPlugin<ResolvedSignalAccount, SignalProbe> =
           });
         },
         clearTyping: async ({ cfg, to, accountId }) => {
+          if (
+            resolveSignalAccount({ cfg, accountId }).config.assistantRequestPrefixes !== undefined
+          ) {
+            return;
+          }
           await (
             await loadSignalSendRuntime()
           ).sendTypingSignal(to, {

@@ -11,7 +11,7 @@ type SessionGoalOperationIdentity = {
 
 export type SessionGoalOperation = SessionGoalOperationIdentity &
   (
-    | { action: "start"; objective: string; tokenBudget?: number }
+    | { action: "start"; objective: string; tokenBudget?: number; maxContinuationTurns?: number }
     | { action: "edit"; goalId: string; objective: string }
     | { action: "resume" | "pause" | "block" | "complete"; goalId: string; note?: string }
     | { action: "clear"; goalId: string }
