@@ -48,6 +48,33 @@ afterEach(() => resetChatThreadState());
 
 describe("system notices through pending-to-history promotion", () => {
   it.each([
+    "Exec completed (quiet-test, code 0) :: Checks passed",
+    "Exec completed (quiet-test, code 1) :: Checks failed",
+    "Exec failed (quiet-test, signal SIGTERM) :: Command interrupted",
+  ])("keeps background command events out of chat: %s", (content) => {
+    const event = {
+      ...baseMessage,
+      content,
+      provenance: { kind: "internal_system", sourceTool: "exec" },
+    };
+    const question = { role: "user", content: "Check the build", timestamp: 999 };
+    const answer = { role: "assistant", content: "The build needs attention.", timestamp: 1001 };
+    for (const messages of [
+      [question, answer],
+      [question, event, answer],
+    ]) {
+      expect(render(messages, pending(event))).toMatchObject([
+        { kind: "group", role: "user", messages: [{ message: question }] },
+        { kind: "group", role: "assistant", messages: [{ message: answer }] },
+      ]);
+    }
+    // Text alone is not a system event: a person can quote the same command output.
+    expect(render([{ ...baseMessage, content }], [])).toMatchObject([
+      { kind: "group", role: "user", messages: [{ message: { content } }] },
+    ]);
+  });
+
+  it.each([
     [
       "main_session_restart_recovery",
       "System · restart recovery",
