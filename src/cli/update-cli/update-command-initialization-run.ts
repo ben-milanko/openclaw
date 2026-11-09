@@ -34,6 +34,7 @@ import {
   acquireLegacyUpdateInitializationFence,
   confirmFreshUpdateDowngrade,
   initializeUpdateStateFromTarget,
+  resolveFreshUpdateMetadata,
   withUpdateInitializationCleanup,
   type InitializedUpdate,
   type UpdateTargetSelection,
@@ -49,7 +50,7 @@ import {
   withUpdateInProgressEnv,
 } from "./update-command-service-env.js";
 import type { UpdateCommandRecoveryState } from "./update-command-service-maintenance.js";
-import { resolveFreshUpdateMetadata, resolveUpdateCommandTarget } from "./update-command-target.js";
+import { resolveUpdateCommandTarget } from "./update-command-target.js";
 import {
   reportUnreportedUpdateAdmissionOutcome,
   withUpdateCommandTerminalResult,

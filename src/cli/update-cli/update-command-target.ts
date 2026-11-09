@@ -78,22 +78,6 @@ import { resolveManagedServicePackageUpdatePlan } from "./update-command-service
 import type { UpdateCommandRecoveryState } from "./update-command-service.js";
 import { reportPreMutationUpdateResult } from "./update-command-terminal.js";
 
-/** A fresh profile must be initialized by an identified, schema-declaring target. */
-export async function resolveFreshUpdateMetadata(target: {
-  targetVersion: string | null;
-  packageTargetSchemaVersions?: OpenClawSchemaVersions;
-  refuseUpdate: RefuseUpdate;
-}) {
-  if (target.targetVersion && target.packageTargetSchemaVersions) {
-    return { version: target.targetVersion, schemaVersions: target.packageTargetSchemaVersions };
-  }
-  const failure = createUpdatePreflightFailure(
-    target.targetVersion ? "target-schema-metadata" : "target-registry-dist-tag",
-  );
-  await target.refuseUpdate("target-metadata-preflight", failure.message, failure.failureFacts);
-  return undefined;
-}
-
 /** Describe the selected plan without changing roots, runtime, or service authority. */
 function printManagedServicePackageUpdatePlan(params: {
   rootRedirect: ManagedServiceRootRedirect | null;
