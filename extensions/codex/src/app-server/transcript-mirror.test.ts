@@ -713,7 +713,7 @@ describe("mirrorCodexAppServerTranscript", () => {
     expect(published.at(-1)).toMatchObject({
       content: [{ type: "text", text: rewrittenText }],
       openclawDelivery: { mediaUrls: ["./artifact.json"] },
-      idempotencyKey: "codex-app-server:thread-1:turn-1:assistant",
+      idempotencyKey: "run-media",
     });
     const persisted = (await readSessionTranscriptEvents(target)).flatMap((event) =>
       event && typeof event === "object" && "message" in event ? [event.message] : [],
