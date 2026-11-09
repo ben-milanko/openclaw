@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      EXPECTED_SOURCE: fe3db89a789d7ed3ce8375f6756e61f02e220bc4
-      EXPECTED_TREE: ce2d7b9e17d582f1e6d3ac302b1fdc10d9eeb358
+      EXPECTED_SOURCE: a1ffc78e72ee4c1448831dd30caa4bbf61ac9ad6
+      EXPECTED_TREE: 54742d17326016d389f6612e86669c37b11f872f
       GOMEMLIMIT: 4GiB
       GOMAXPROCS: "2"
       GOGC: "100"
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ben-milanko/openclaw
-          ref: fe3db89a789d7ed3ce8375f6756e61f02e220bc4
+          ref: a1ffc78e72ee4c1448831dd30caa4bbf61ac9ad6
           persist-credentials: false
 
       - name: Verify source and runner capacity
@@ -70,7 +70,7 @@ jobs:
           test "$(pnpm --version)" = 12.15.0
           node scripts/package-openclaw-for-docker.mjs \
             --output-dir "$RUNNER_TEMP/ben-package" \
-            --output-name openclaw-2026.11.2-ben-fe3db89a.tgz \
+            --output-name openclaw-2026.11.2-ben-a1ffc78e.tgz \
             2>&1 | tee "$RUNNER_TEMP/ben-package/build.log"
           test -z "$(git status --porcelain)"
 
@@ -82,7 +82,7 @@ jobs:
           import hashlib, json, os, tarfile
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP'], 'ben-package')
-          archive = root / 'openclaw-2026.11.2-ben-fe3db89a.tgz'
+          archive = root / 'openclaw-2026.11.2-ben-a1ffc78e.tgz'
           with tarfile.open(archive) as package:
               manifest = json.load(package.extractfile('package/package.json'))
               build = json.load(package.extractfile('package/dist/build-info.json'))
@@ -105,7 +105,7 @@ jobs:
         with:
           name: ben-gateway-2026.11.2-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/ben-package/openclaw-2026.11.2-ben-fe3db89a.tgz
+            ${{ runner.temp }}/ben-package/openclaw-2026.11.2-ben-a1ffc78e.tgz
             ${{ runner.temp }}/ben-package/package-receipt.json
           if-no-files-found: error
           retention-days: 14
