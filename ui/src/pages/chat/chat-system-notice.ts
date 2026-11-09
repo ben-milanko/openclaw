@@ -78,6 +78,11 @@ export function projectChatSystemNotice(
   if (!message || normalizeRoleForGrouping(message.role) !== "user") {
     return [item, ...pendingItems];
   }
+  // Exec lifecycle events resume the agent; their raw output is not a chat update.
+  // Keep custody interruptions visible without changing delivery or transcript data.
+  if (provenance.sourceTool === "exec") {
+    return pendingItems;
+  }
   const noticeKind = resolveSystemNoticeKind(
     typeof provenance.sourceTool === "string" ? provenance.sourceTool : undefined,
   );
