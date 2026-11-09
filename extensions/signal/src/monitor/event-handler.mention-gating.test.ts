@@ -128,12 +128,14 @@ function createMentionHandler(params: {
   groupHistories?: ReturnType<typeof createBaseSignalEventHandlerDeps>["groupHistories"];
   account?: string;
   accountUuid?: string;
+  assistantRequestPrefixes?: string[];
 }) {
   return createSignalEventHandler(
     createBaseSignalEventHandlerDeps({
       cfg: createSignalConfig({
         requireMention: params.requireMention,
         mentionPattern: params.mentionPattern,
+        assistantRequestPrefixes: params.assistantRequestPrefixes,
       }),
       ...(typeof params.historyLimit === "number" ? { historyLimit: params.historyLimit } : {}),
       ...(params.groupHistories ? { groupHistories: params.groupHistories } : {}),
@@ -149,7 +151,11 @@ function createMentionGatedHistoryHandler() {
   return { handler, groupHistories };
 }
 
-function createSignalConfig(params: { requireMention: boolean; mentionPattern?: string | null }) {
+function createSignalConfig(params: {
+  requireMention: boolean;
+  mentionPattern?: string | null;
+  assistantRequestPrefixes?: string[];
+}) {
   const mentionPatterns = params.mentionPattern === null ? [] : [params.mentionPattern ?? "@bot"];
   return {
     messages: {
@@ -159,6 +165,7 @@ function createSignalConfig(params: { requireMention: boolean; mentionPattern?: 
     channels: {
       signal: {
         groups: { "*": { requireMention: params.requireMention } },
+        assistantRequestPrefixes: params.assistantRequestPrefixes,
       },
     },
   } as unknown as OpenClawConfig;
@@ -540,5 +547,65 @@ describe("signal mention-skip silent ingest", () => {
 
     expect(internalHookMocks.createInternalHookEvent).not.toHaveBeenCalled();
     expect(internalHookMocks.triggerInternalHook).not.toHaveBeenCalled();
+  });
+});
+
+describe("explicit assistant requests on a personal account", () => {
+  beforeEach(() => {
+    capturedCtx = undefined;
+  });
+  it.each([false, true])(
+    "drops ordinary chat and human mentions before dispatch (group=%s)",
+    async (group) => {
+      const handler = createMentionHandler({
+        requireMention: false,
+        accountUuid: "human-account",
+        assistantRequestPrefixes: ["Helper:"],
+      });
+      for (const message of [
+        "hello",
+        "Anyone know the answer?",
+        "@Human please help",
+        "We discussed Helper: explain this",
+        "Helper:",
+        "￼ please help",
+      ]) {
+        await handler(
+          createSignalReceiveEvent({
+            dataMessage: {
+              message,
+              mentions: [{ uuid: "human-account", start: 0, length: 1 }],
+              ...(group ? { groupInfo: { groupId: "g1" } } : {}),
+            },
+          }),
+        );
+      }
+      expect(capturedCtx).toBeUndefined();
+    },
+  );
+  it.each([false, true])(
+    "admits explicit textual requests independent of native mentions (group=%s)",
+    async (group) => {
+      const handler = createMentionHandler({
+        requireMention: true,
+        mentionPattern: null,
+        accountUuid: "human-account",
+        assistantRequestPrefixes: ["Helper:"],
+      });
+      await handler(
+        createSignalReceiveEvent({
+          dataMessage: {
+            message: "Helper: explain the diagram",
+            ...(group ? { groupInfo: { groupId: "g1" } } : {}),
+          },
+        }),
+      );
+      expect(getCapturedCtx().Body).toContain("Helper: explain the diagram");
+    },
+  );
+  it("fails closed with an empty request-prefix list", async () => {
+    const handler = createMentionHandler({ requireMention: false, assistantRequestPrefixes: [] });
+    await handler(makeGroupEvent({ message: "Helper: explain the diagram" }));
+    expect(capturedCtx).toBeUndefined();
   });
 });

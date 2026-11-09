@@ -10,6 +10,22 @@ const ctx: MsgContext = {
 };
 
 describe("implicit thread reply expectation", () => {
+  it.each(["direct", "group"])(
+    "honors channel-owned optional replies for addressed %s requests",
+    (ChatType) => {
+      expect(
+        resolveSourceReplyExpectation({
+          ctx: {
+            Provider: "signal",
+            ChatType,
+            WasMentioned: true,
+            SourceReplyExpectation: "optional",
+          },
+          cfg: {},
+        }),
+      ).toBe("optional");
+    },
+  );
   it.each([
     { policy: "allow", overrides: {}, expected: "optional" },
     { policy: "disallow", overrides: {}, expected: "required" },

@@ -1,22 +1,20 @@
 import { isDeepStrictEqual } from "node:util";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
-import { resolveConfiguredGitHubHost } from "../../agents/github-host.js";
-import {
-  GitHubIdentityError,
-  prepareGitHubReadIdentity,
-  resolveConfiguredGitHubToolIdentity,
-} from "../../agents/github-tool-identity.js";
+import { GitHubIdentityError } from "../../agents/github-tool-identity.js";
 import {
   getSubagentSessionListReadSnapshotIdentity,
   prepareSubagentSessionListReadCache,
 } from "../../agents/subagents/registry/subagent-registry-state.js";
 import { getRuntimeConfigSnapshotMetadata } from "../../config/runtime-snapshot.js";
 import type { InternalSessionEntry } from "../../config/sessions/types.js";
-import { getActiveSecretsRuntimeConfigSnapshot } from "../../secrets/runtime-state.js";
 import { getSessionRepositoryWorkspaceStore } from "../../state/session-repository-workspaces.js";
 import { truncateUtf16Safe } from "../../utils.js";
 import type { ControlUiSessionPreview } from "../control-ui-contract.js";
+import {
+  GitHubReadRequestInactiveError,
+  prepareControlUiGitHubIdentity,
+} from "../control-ui-github-identity.js";
 import type {
   ControlUiSessionPullRequestChecksParams,
   loadControlUiSessionPullRequestChecks,
@@ -29,7 +27,6 @@ import {
 } from "../control-ui-session-pr-read.js";
 import { withControlUiSessionPrSource } from "../control-ui-session-pr-source.js";
 import { parseControlUiSessionPullRequestsSubscribeParams } from "../control-ui-session-pr-subscriptions.js";
-import { requestCurrentGitHubOAuthRefresh } from "../github-oauth-lifecycle.js";
 import { gitHubPublicApi, type ControlUiGitHubPreviewIdentity } from "../github-public-api.js";
 import { resolveRequestedSessionAgentId as resolveRequestedGlobalAgentId } from "../session-request-agent.js";
 import { withReadySessionRows } from "../session-row-prepared-read.js";
@@ -37,74 +34,9 @@ import { getSessionRowProjection } from "../session-row-projection-access.js";
 import { createSessionListEntryFilter } from "../session-sharing.js";
 import { retainGatewaySessionEntryReadOnly } from "../session-utils-read-lifetime.js";
 import { resolveAgentIdOrRespondError } from "./agent-id-shared.js";
-import type {
-  GatewayClient,
-  GatewayRequestContext,
-  GatewayRequestHandlerOptions,
-  GatewayRequestHandlers,
-} from "./types.js";
+import type { GatewayClient, GatewayRequestContext, GatewayRequestHandlers } from "./types.js";
 
 type LoadGitHubPreview = typeof gitHubPublicApi.loadControlUiGitHubPreview;
-
-class GitHubReadRequestInactiveError extends Error {
-  constructor() {
-    super("GitHub request is no longer active. Try again.");
-  }
-}
-
-async function prepareControlUiGitHubIdentity(
-  { context, client, signal, hasCurrentClientAuthority }: GatewayRequestHandlerOptions,
-  agentId: string,
-) {
-  const config = context.getRuntimeConfig();
-  const configuredIdentity = () => {
-    const current = context.getRuntimeConfig();
-    if (resolveConfiguredGitHubHost(current) !== "github.com") {
-      return undefined;
-    }
-    return (
-      resolveConfiguredGitHubToolIdentity({ config: current, agentId, scope: "agent" }) ??
-      resolveConfiguredGitHubToolIdentity({ config: current, agentId, scope: "system" })
-    );
-  };
-  // Nested plugin requests may decorate the client; transport authority retains its owner.
-  const assertActive = () => {
-    if (
-      signal?.aborted ||
-      (hasCurrentClientAuthority
-        ? !hasCurrentClientAuthority()
-        : client?.connId &&
-          !context.getClientConnIds?.((current) => current === client).has(client.connId))
-    ) {
-      throw new GitHubReadRequestInactiveError();
-    }
-  };
-  assertActive();
-  // Without a managed selection, retain service/env/anonymous access without
-  // probing native gh. Both paths must still own the selection at delivery.
-  const identity = configuredIdentity()
-    ? await prepareGitHubReadIdentity({
-        config,
-        sourceConfig: getActiveSecretsRuntimeConfigSnapshot()?.sourceConfig ?? config,
-        agentId,
-        allowStale: true,
-        getCurrentConfig: () => context.getRuntimeConfig(),
-        assertActive,
-        refresh: () => requestCurrentGitHubOAuthRefresh(agentId),
-      })
-    : undefined;
-  return {
-    identity,
-    assertSelected:
-      identity?.assertSelected ??
-      (() => {
-        assertActive();
-        if (configuredIdentity()) {
-          throw new GitHubIdentityError("changed");
-        }
-      }),
-  };
-}
 
 function createGitHubReadHandler<T>(
   method: string,

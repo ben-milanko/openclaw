@@ -14,8 +14,8 @@ title: "Goal"
 A **goal** is one durable objective attached to the current OpenClaw session.
 It gives the agent and the operator a shared target for long-running work.
 In built-in chat runs and supported local or cloud-worker Codex sessions,
-OpenClaw continues pursuing an active goal after a normal turn finishes, even
-when the model ends with a final reply instead of calling another tool. A goal
+OpenClaw can continue pursuing an active goal after a normal turn finishes when
+automatic follow-up turns were explicitly requested. A goal
 is not a reminder, cron job, or standing order.
 
 Goals are session state: they move with the session key, survive process
@@ -184,10 +184,13 @@ so an operator stop remains in effect until the goal is resumed.
 ## Automatic continuation
 
 After a built-in chat or auto-reply turn finishes normally, OpenClaw checks the
-current goal and its token usage. If the same goal is still active, it queues a
+current goal and its token usage. With an explicitly requested
+`max_continuation_turns` (1–100) on `create_goal`, or `maxContinuationTurns` on the
+`session-goal-start` chat intent, it queues a
 hidden internal nudge: **Advance the active goal; keep it active until fully
-achieved.** Each successfully settled continuation makes the same check; this
-is not a one-shot retry or a fixed number of extra turns.
+achieved.** Each successfully settled continuation makes the same check until
+the persisted lifetime turn bound is reached. Omitting the bound preserves
+manual continuation. Pausing and resuming do not reset that bound.
 
 The normal follow-up queue owns these turns. They wait for the previous turn's
 execution and delivery to settle, use normal session admission and permissions,

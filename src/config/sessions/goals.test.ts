@@ -106,11 +106,12 @@ describe("session goals", () => {
 
   it("resumes budget-limited goals with a fresh budget window", async () => {
     await writeSession(100);
-    await createSessionGoal({
+    const created = await createSessionGoal({
       storePath: fixture.storePath(),
       sessionKey,
       objective: "finish task",
       tokenBudget: 20,
+      maxContinuationTurns: 3,
       now: 10,
     });
     await upsertSessionEntry({
@@ -119,6 +120,7 @@ describe("session goals", () => {
       entry: {
         ...getSessionEntry({ storePath: fixture.storePath(), sessionKey })!,
         totalTokens: 125,
+        goal: { ...created, continuationTurns: 1 },
       },
     });
     await getSessionGoal({ storePath: fixture.storePath(), sessionKey, now: 20 });
@@ -134,6 +136,8 @@ describe("session goals", () => {
     expect(resumed.status).toBe("active");
     expect(resumed.tokenStart).toBe(125);
     expect(resumed.tokensUsed).toBe(0);
+    expect(resumed.maxContinuationTurns).toBe(3);
+    expect(resumed.continuationTurns).toBe(1);
     expect(snapshot.goal?.status).toBe("active");
     expect(snapshot.goal?.tokensUsed).toBe(0);
   });

@@ -147,6 +147,7 @@ function createActiveGoalEntry(): SessionEntry {
       tokenStart: 0,
       tokensUsed: 0,
       continuationTurns: 0,
+      maxContinuationTurns: 3,
     },
   };
 }
@@ -184,6 +185,8 @@ describe("admitFollowupTurn", () => {
     "replaced",
     "cleared",
     "new input",
+    "manual",
+    "turn limit",
   ] as const)("drops an automatic Goal nudge when admission observes %s", async (change) => {
     const operation = createOperation();
     const original = createActiveGoalEntry();
@@ -196,6 +199,10 @@ describe("admitFollowupTurn", () => {
       current.goal = undefined;
     } else if (change === "new input") {
       state.queueDepth.mockReturnValue(1);
+    } else if (change === "manual") {
+      delete current.goal!.maxContinuationTurns;
+    } else if (change === "turn limit") {
+      current.goal!.continuationTurns = 3;
     } else {
       current.goal!.status = change;
     }

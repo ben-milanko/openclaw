@@ -48,6 +48,10 @@ export function operationFingerprint(operation: SessionGoalOperation): string {
       "objective" in operation ? operation.objective : null,
       "tokenBudget" in operation ? operation.tokenBudget : null,
       "note" in operation ? operation.note : null,
+      // Preserve existing receipt hashes for operations that did not request a bound.
+      ...("maxContinuationTurns" in operation && operation.maxContinuationTurns !== undefined
+        ? [operation.maxContinuationTurns]
+        : []),
     ]),
   );
 }

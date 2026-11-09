@@ -20,6 +20,15 @@ export function registerGoalAutomaticContinuationCases(
   goalStart: (message: string) => Record<string, unknown>,
   userMessages: () => readonly unknown[],
 ) {
+  const boundedGoalStart = (message: string, maxContinuationTurns = 3) => ({
+    ...goalStart(message),
+    intent: {
+      kind: "session-goal-start",
+      version: 1,
+      issuedAtMs: Date.now(),
+      maxContinuationTurns,
+    },
+  });
   it("nudges consecutive normal final turns until the same Goal is complete", async () => {
     const completed = createDeferred();
     runEmbeddedAgent.mockImplementation(async (params) => {
@@ -44,7 +53,7 @@ export function registerGoalAutomaticContinuationCases(
         },
       };
     });
-    const started = await rpc("chat.send", goalStart("Finish a three-turn checklist"));
+    const started = await rpc("chat.send", boundedGoalStart("Finish a three-turn checklist"));
     expect(started.mock.calls[0]?.[0]).toBe(true);
     await completed.promise;
     const drained = await waitForGatewayActiveWork(30_000);
@@ -54,6 +63,39 @@ export function registerGoalAutomaticContinuationCases(
     expect(runEmbeddedAgent.mock.calls[2]?.[0].prompt).toContain("Advance");
     expect(userMessages()).toHaveLength(1);
     expect(loadSessionEntry(scope())?.goal?.status).toBe("complete");
+  });
+
+  it("stops at the persisted lifetime continuation limit while leaving an unfinished goal active", async () => {
+    const secondStarted = createDeferred();
+    runEmbeddedAgent.mockImplementation(async (params) => {
+      if (runEmbeddedAgent.mock.calls.length === 2) {
+        secondStarted.resolve();
+      }
+      return {
+        payloads: [{ text: "More work remains." }],
+        meta: {
+          durationMs: 0,
+          stopReason: "end_turn",
+          agentMeta: {
+            sessionId: params.sessionId,
+            provider: "test",
+            model: "test",
+            usage: { input: 1, output: 1 },
+          },
+        },
+      };
+    });
+    const started = await rpc("chat.send", boundedGoalStart("Finish within one follow-up turn", 1));
+    expect(started.mock.calls[0]?.[0]).toBe(true);
+    await secondStarted.promise;
+    expect((await waitForGatewayActiveWork(30_000)).drained).toBe(true);
+    expect(runEmbeddedAgent).toHaveBeenCalledTimes(2);
+    expect(userMessages()).toHaveLength(1);
+    expect(loadSessionEntry(scope())?.goal).toMatchObject({
+      status: "active",
+      maxContinuationTurns: 1,
+      continuationTurns: 1,
+    });
   });
 
   it("stops automatic goal pursuit when the operator stops a continuation", async () => {
@@ -111,7 +153,7 @@ export function registerGoalAutomaticContinuationCases(
         },
       };
     });
-    const started = await rpc("chat.send", goalStart("Keep working until stopped"));
+    const started = await rpc("chat.send", boundedGoalStart("Keep working until stopped"));
     expect(started.mock.calls[0]?.[0]).toBe(true);
     try {
       await secondStarted.promise;

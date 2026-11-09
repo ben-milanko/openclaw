@@ -336,6 +336,33 @@ Mention-gated group with bounded context:
 }
 ```
 
+### Explicit requests on a personal account
+
+For an account also used by a human, native mentions address the human, not necessarily
+the assistant. Set `channels.signal.assistantRequestPrefixes` (or its account override)
+to literal addresses such as `["Helper:", "Helper,"]`. Each prefix must end in a colon
+or comma. Matching is case-insensitive at the start of the authored message, after
+leading whitespace, and requires nonempty text after the prefix.
+
+When this option is present, both DMs and groups must pass this gate before model
+execution. Native mentions, quoted requests, attachments, reactions, and unprefixed
+commands cannot bypass it. An empty list admits nothing. Existing allowlists and
+DM/group policies still apply; an admitted textual request satisfies group mention
+gating. The prefix remains in the model input. Topic restrictions and opt-outs
+still belong in the assistant instructions; this gate does not classify intent.
+
+In this mode automatic error payloads and silent replies are suppressed before
+normal delivery or durable queue admission. Runtime recovery notices are also
+suppressed for this account. OpenClaw typing, read receipts, pairing
+notices, and status reactions are also disabled for these incoming turns. Configure
+the external daemon receipts separately. Diagnostics remain local; a failed
+request receives no automatic error notice. Explicit message-tool sends remain
+separately authorized actions, so restrict that tool when contacts must not send.
+
+This does not cancel deliveries queued before the option took effect. Reconcile
+old deliveries and verify effective runtime policy before restoring a stopped
+transport. Omitting the option preserves ordinary bot-account behavior.
+
 Allowed group messages that do not mention the bot stay silent and are kept only in the bounded pending history window. When a later native @mention or fallback text mention triggers the bot, OpenClaw includes that recent context and replies to the same group. Skipped attachment bodies are not downloaded; they may appear only as compact media placeholders in the pending context.
 
 ## How it works (behavior)

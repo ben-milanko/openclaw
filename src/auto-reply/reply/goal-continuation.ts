@@ -73,6 +73,8 @@ export function isGoalContinuationCurrent(
     entry.lifecycleRevision === continuation.lifecycleRevision &&
     goal?.id === continuation.goalId &&
     goal.status === "active" &&
+    goal.maxContinuationTurns !== undefined &&
+    goal.continuationTurns < goal.maxContinuationTurns &&
     !entry.abortedLastRun &&
     (entry.agentHarnessId === undefined ||
       entry.agentHarnessId === "openclaw" ||

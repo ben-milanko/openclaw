@@ -44,6 +44,8 @@ export type ControlUiGitHubPreviewTarget = GitHubItemTarget;
 export type ControlUiGitHubPreviewIdentity = {
   token: string | undefined;
   cacheScope: string;
+  /** Host-granted access, revalidated by the identity's live authority checks. */
+  allowPrivateRepositories?: true;
   /** Host service/env credentials may retry a stale HTTP 401 anonymously. */
   optionalAuth?: true;
   stale?: true;
@@ -65,18 +67,27 @@ const previewCaches = new WeakMap<
 
 export const parseControlUiGitHubPreviewTarget = parseGitHubItemTarget;
 
-export function isPublicGitHubRepository(value: unknown): value is Record<string, unknown> {
-  return isRecord(value) && value.private === false && value.visibility === "public";
+export function isReadableGitHubRepository(
+  value: unknown,
+  allowPrivate = false,
+): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    ((value.private === false && value.visibility === "public") ||
+      (allowPrivate &&
+        value.private === true &&
+        (value.visibility === "private" || value.visibility === "internal")))
+  );
 }
 
-export async function assertPublicGitHubRepository(
+export async function assertReadableGitHubRepository(
   repositoryUrl: string,
   fetchImpl: typeof fetch,
   token?: string,
   identity?: ControlUiGitHubPreviewIdentity,
   signal?: AbortSignal,
 ): Promise<void> {
-  // Stop before item reads so shared credentials cannot probe private item numbers.
+  // Check access before item reads; shared credentials alone do not grant it.
   const repository = await readGitHubJsonResponse(
     await fetchGitHubApi(
       repositoryUrl,
@@ -90,8 +101,10 @@ export async function assertPublicGitHubRepository(
       GITHUB_API_ORIGIN,
     ),
   );
-  if (!isPublicGitHubRepository(repository)) {
-    throw new ControlUiGitHubError(404, "GitHub repository is not public");
+  if (
+    !isReadableGitHubRepository(repository, Boolean(token && identity?.allowPrivateRepositories))
+  ) {
+    throw new ControlUiGitHubError(404, "GitHub repository is unavailable");
   }
 }
 
@@ -282,12 +295,12 @@ async function fetchPreview(
       undefined,
       GITHUB_API_ORIGIN,
     );
-  const assertPublicRepository = (url: string) =>
-    assertPublicGitHubRepository(url, fetchImpl, token, identity, signal);
+  const assertReadableRepository = (url: string) =>
+    assertReadableGitHubRepository(url, fetchImpl, token, identity, signal);
   const repositoryUrl = `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}`;
   const itemUrl = `${repositoryUrl}/${target.kind === "pull" ? "pulls" : "issues"}/${target.number}`;
   if (token) {
-    await assertPublicRepository(repositoryUrl);
+    await assertReadableRepository(repositoryUrl);
   }
   // Every credentialed fetch below shares this guard: a rename or transfer can
   // redirect into a repository the token can read but the viewer may not see.
@@ -297,11 +310,11 @@ async function fetchPreview(
         if (!redirectedRepositoryUrl) {
           throw new ControlUiGitHubError(502, "GitHub item returned an unsafe redirect");
         }
-        await assertPublicRepository(redirectedRepositoryUrl);
+        await assertReadableRepository(redirectedRepositoryUrl);
       }
     : undefined;
   // Validators live with the preview, so eviction, failed refresh, and credential
-  // rotation retire both together. Never reuse public-visibility admission.
+  // rotation retire both together. Never reuse repository-access admission.
   const credentialScope = githubApiCredentialCacheScope(token);
   const pages = new Map<string, ConditionalPage>();
   const readItem = async (url: string, maxBytes?: number) => {
@@ -320,7 +333,7 @@ async function fetchPreview(
     }
     return value;
   };
-  // Both item reads use the same public admission and redirect guard. Commits
+  // Both item reads use the same repository admission and redirect guard. Commits
   // are optional decoration; their failure must not discard useful metadata.
   const item = readItem(itemUrl);
   const commits =
@@ -341,7 +354,7 @@ async function fetchPreview(
   const [avatarDataUrl, coAuthorFacts] = await Promise.all([
     fetchAvatarDataUrl(avatarUrl, fetchImpl, signal),
     commits.then((value) => fetchCoAuthors(preview.login, value, fetchImpl, signal)),
-    token && assertPublicRepository(previewRepositoryApiUrl(target, parsed)),
+    token && assertReadableRepository(previewRepositoryApiUrl(target, parsed)),
   ]);
   const finishedAt = performance.now();
   if (finishedAt - startedAt >= 500) {
@@ -378,7 +391,10 @@ export async function loadControlUiGitHubPreview(
   // Cache lookup has no external effect. Dispatch and delivery revalidate live credentials.
   identity?.assertSelected();
   const { token, cacheScope } = identity ?? { token: undefined, cacheScope: "anonymous" };
-  const key = cacheKey(target, `${cacheScope}\0${githubApiCredentialCacheScope(token)}`);
+  const key = cacheKey(
+    target,
+    `${cacheScope}\0${githubApiCredentialCacheScope(token)}\0${identity?.allowPrivateRepositories === true ? "private" : "public"}`,
+  );
   const previewCache =
     previewCaches.get(fetchImpl) ??
     createStaleWhileRevalidateCache<CachedPreview>({

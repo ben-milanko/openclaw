@@ -5,6 +5,7 @@ import { hasNodeErrorCode } from "../../infra/path-guards.js";
 import { SQLITE_SIDECAR_SUFFIXES } from "../../infra/sqlite-files.js";
 import type { UpdateCandidateAdmissionResult } from "../../infra/update-candidate-admission.js";
 import { compareSemverStrings } from "../../infra/update-check.js";
+import { createUpdatePreflightFailure } from "../../infra/update-preflight-details.js";
 import { assertUpdateRecoveryAdmission } from "../../infra/update-run-recovery-admission.js";
 import { isFailedUpdateStep } from "../../infra/update-run-step.js";
 import type { OpenClawSchemaVersions } from "../../state/openclaw-schema-versions.js";
@@ -20,7 +21,7 @@ import type { UpdateCommandExecutor } from "./update-command-executor.js";
 import type { UpdateInitializationAdmission } from "./update-command-initialization-types.js";
 import type { StagedPackageInstallUpdate } from "./update-command-package.js";
 import { runPackageUpdateDoctor } from "./update-command-package.js";
-import { UnreportedUpdateAdmissionOutcome } from "./update-command-result.js";
+import { UnreportedUpdateAdmissionOutcome, type RefuseUpdate } from "./update-command-result.js";
 import type { resolveUpdateCommandTarget } from "./update-command-target.js";
 
 export type UpdateTargetSelection =
@@ -42,6 +43,22 @@ export type InitializedUpdate = UpdateInitializationAdmission &
     downgradeConfirmed?: boolean;
     callerLegacyConfigPlan?: LegacyConfigUpdatePlan;
   };
+
+/** A fresh profile must be initialized by an identified, schema-declaring target. */
+export async function resolveFreshUpdateMetadata(target: {
+  targetVersion: string | null;
+  packageTargetSchemaVersions?: OpenClawSchemaVersions;
+  refuseUpdate: RefuseUpdate;
+}) {
+  if (target.targetVersion && target.packageTargetSchemaVersions) {
+    return { version: target.targetVersion, schemaVersions: target.packageTargetSchemaVersions };
+  }
+  const failure = createUpdatePreflightFailure(
+    target.targetVersion ? "target-schema-metadata" : "target-registry-dist-tag",
+  );
+  await target.refuseUpdate("target-metadata-preflight", failure.message, failure.failureFacts);
+  return undefined;
+}
 
 export async function confirmFreshUpdateDowngrade(params: {
   target: NonNullable<InitializedUpdate["target"]>;

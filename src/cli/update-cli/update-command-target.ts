@@ -78,22 +78,6 @@ import { resolveManagedServicePackageUpdatePlan } from "./update-command-service
 import type { UpdateCommandRecoveryState } from "./update-command-service.js";
 import { reportPreMutationUpdateResult } from "./update-command-terminal.js";
 
-/** A fresh profile must be initialized by an identified, schema-declaring target. */
-export async function resolveFreshUpdateMetadata(target: {
-  targetVersion: string | null;
-  packageTargetSchemaVersions?: OpenClawSchemaVersions;
-  refuseUpdate: RefuseUpdate;
-}) {
-  if (target.targetVersion && target.packageTargetSchemaVersions) {
-    return { version: target.targetVersion, schemaVersions: target.packageTargetSchemaVersions };
-  }
-  const failure = createUpdatePreflightFailure(
-    target.targetVersion ? "target-schema-metadata" : "target-registry-dist-tag",
-  );
-  await target.refuseUpdate("target-metadata-preflight", failure.message, failure.failureFacts);
-  return undefined;
-}
-
 /** Describe the selected plan without changing roots, runtime, or service authority. */
 function printManagedServicePackageUpdatePlan(params: {
   rootRedirect: ManagedServiceRootRedirect | null;
@@ -340,6 +324,13 @@ export async function resolveUpdateCommandTarget(
         }
       }
 
+      if (opts.packageTarget && updateInstallKind !== "package") {
+        await refuseUpdate(
+          "unsupported-update-target",
+          "Exact package targets require an existing package installation.",
+        );
+        return undefined;
+      }
       const unsupportedMainTag = updateInstallKind === "package" && explicitTag === "main";
       if ((channel === "extended-stable" && explicitTag) || unsupportedMainTag) {
         await refuseUpdate(
@@ -505,13 +496,17 @@ export async function resolveUpdateCommandTarget(
           env: packageInstallEnv,
         };
         const packageSpec = (targetTag: string) =>
-          resolveGlobalInstallSpec({
-            packageName: DEFAULT_PACKAGE_NAME,
-            tag: targetTag,
-            env: packageInstallEnv,
-          });
+          opts.packageTarget
+            ? tag
+            : resolveGlobalInstallSpec({
+                packageName: DEFAULT_PACKAGE_NAME,
+                tag: targetTag,
+                env: packageInstallEnv,
+              });
         let targetMetadata: Awaited<ReturnType<typeof fetchNpmPackageTargetStatus>> | undefined;
-        if (channel === "extended-stable") {
+        if (opts.packageTarget) {
+          packageInstallSpec = tag;
+        } else if (channel === "extended-stable") {
           const extendedStable = await resolveExtendedStablePackage({
             installKind: updateInstallKind,
             timeoutMs,

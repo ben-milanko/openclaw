@@ -389,7 +389,7 @@ function parsePayload(value: unknown, nowMs: number): AgentRuntimeIdentityTokenP
     const sessionSpawnContext = raw.sessionSpawnContext;
     const executionLineageHandoffId = raw.executionLineageHandoffId;
     const cronToolsAllowCapture = raw.cronToolsAllowCapture;
-    const cronExecToolTarget = cronToolsAllowCapture ? raw.cronExecToolTarget : undefined;
+    const cronExecToolTarget = raw.cronExecToolTarget;
     const cronCreatorAuthorityGrant = raw.cronCreatorAuthorityGrant;
     if (!hasCronCreatorGrantProvenance(raw, operationalRunId)) {
       return undefined;
@@ -555,8 +555,7 @@ function prepareAgentRuntimeIdentityTokenPayload(
     ...(params.cronToolsAllowCapture === "final-executable-surface"
       ? { cronToolsAllowCapture: params.cronToolsAllowCapture }
       : {}),
-    ...(params.cronToolsAllowCapture === "final-executable-surface" &&
-    params.cronExecToolTarget?.host === "gateway"
+    ...(params.cronExecToolTarget?.host === "gateway"
       ? { cronExecToolTarget: { ...params.cronExecToolTarget } }
       : {}),
     ...(params.cronCreatorAuthorityGrant

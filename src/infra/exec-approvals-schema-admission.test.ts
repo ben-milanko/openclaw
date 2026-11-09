@@ -1,9 +1,11 @@
+import fs from "node:fs";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import type { AuditWriterRequest } from "../audit/audit-event-writer.types.js";
 import { prepareExecutionIdentityContextAtAdmission } from "../audit/execution-identity.test-support.js";
 import { insertOperatorApproval } from "../gateway/operator-approval-store.js";
+import { createProcessSupervisor } from "../process/supervisor/supervisor.js";
 import { listAgentProvenance } from "../state/agent-provenance.js";
 import {
   closeOpenClawStateDatabaseAsync,
@@ -163,5 +165,62 @@ it.each<Surface>(["roster", "profiles", "approval binding", "message progress", 
     await useFeature(surface, env, "after-authorization");
     expect(source.db.prepare("PRAGMA schema_version").get()).toEqual(before);
     expect(assertCurrent).not.toThrow();
+  },
+);
+
+it.each<Surface>(["profiles", "approval binding", "message progress"])(
+  "keeps retained exec authority through first-use %s schema admission",
+  async (surface) => {
+    const { env } = fixture();
+    const source = openOpenClawStateDatabase({ env });
+    const before = source.db.prepare("PRAGMA schema_version").get();
+    const assertCurrent = await prepareExec();
+    expect(assertCurrent).not.toThrow();
+    await useFeature(surface, env, "during-exec-preparation");
+    expect(source.db.prepare("PRAGMA schema_version").get()).not.toEqual(before);
+    expect(assertCurrent).not.toThrow();
+  },
+);
+
+it.skipIf(process.platform === "win32")(
+  "launches once and joins cleanup after concurrent feature admission",
+  async () => {
+    const { env, root } = fixture();
+    const assertCurrent = await prepareExec();
+    // A different workflow uses this shared store while the command is prepared.
+    await useFeature("profiles", env, "concurrent-launch-preparation");
+    const marker = path.join(root, "executed.txt");
+    const supervisor = createProcessSupervisor();
+    const scopeKey = `integrity-${path.basename(root)}`;
+    const closeScope = supervisor.acquireScopeCleanup(scopeKey, { processTree: "required-all" });
+    let initiations = 0;
+    try {
+      const run = await supervisor.spawn({
+        mode: "child",
+        scopeKey,
+        argv: [
+          process.execPath,
+          "-e",
+          "require('node:fs').appendFileSync(process.argv[1], 'once\\n')",
+          marker,
+        ],
+        cwd: root,
+        stdinMode: "pipe-closed",
+        timeoutMs: 10_000,
+        initiateSpawn(launch) {
+          assertCurrent();
+          initiations += 1;
+          return launch();
+        },
+      });
+      expect(await run.wait()).toMatchObject({ reason: "exit", exitCode: 0 });
+      await closeScope();
+      expect(initiations).toBe(1);
+      expect(fs.readFileSync(marker, "utf8")).toBe("once\n");
+    } finally {
+      supervisor.cancelScope(scopeKey);
+      await closeScope();
+      await supervisor.shutdown();
+    }
   },
 );

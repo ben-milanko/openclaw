@@ -17,6 +17,20 @@ function expectInvalidSignalConfig(config: unknown) {
 }
 
 describe("signal groups schema", () => {
+  it.each([
+    { assistantRequestPrefixes: ["Helper:"] },
+    { assistantRequestPrefixes: ["Helper,"] },
+    { assistantRequestPrefixes: [] },
+  ])("accepts explicit assistant request prefixes %j", (config) => {
+    expectValidSignalConfig(config);
+  });
+  it.each([
+    { assistantRequestPrefixes: [""] },
+    { assistantRequestPrefixes: ["Helper"] },
+    { assistantRequestPrefixes: [":"] },
+  ])("rejects ambiguous request prefixes %j", (config) => {
+    expectInvalidSignalConfig(config);
+  });
   it('rejects dmPolicy="open" without allowFrom "*"', () => {
     const issues = expectInvalidSignalConfig({
       dmPolicy: "open",

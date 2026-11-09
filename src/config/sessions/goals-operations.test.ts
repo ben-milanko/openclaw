@@ -298,6 +298,24 @@ describe("typed Goal operation persistence", () => {
     ).rejects.toMatchObject({ code: "operation-conflict" });
   });
 
+  it("replays the same continuation limit and rejects changing it under an accepted operation ID", async () => {
+    const operation = { ...startOperation(), maxContinuationTurns: 1 };
+    const first = await admit(operation);
+    const before = await loadTranscriptEvents(scope());
+    expect(first.sessionTurnMutationResult?.result.goal?.maxContinuationTurns).toBe(1);
+    const replay = await admit(operation);
+    expect(replay.sessionTurnMutationResult).toEqual({
+      result: first.sessionTurnMutationResult?.result,
+      replayed: true,
+    });
+    expect(replay.appendedCount).toBe(0);
+    await expect(admit({ ...operation, maxContinuationTurns: 2 })).rejects.toMatchObject({
+      code: "operation-conflict",
+    });
+    expect(loadSessionEntry(scope())?.goal?.maxContinuationTurns).toBe(1);
+    expect(await loadTranscriptEvents(scope())).toEqual(before);
+  });
+
   it("replays by SID even when the old writer revision no longer owns the session", async () => {
     const first = await admit();
     const events = await loadTranscriptEvents(scope());

@@ -17,6 +17,8 @@ type SignalToolResultTestMocks = {
   waitForTransportReadyMock: MockFn;
   enqueueSystemEventMock: MockFn;
   sendMock: MockFn;
+  sendTypingMock: MockFn;
+  sendReadReceiptMock: MockFn;
   replyMock: MockFn;
   updateLastRouteMock: MockFn;
   readAllowFromStoreMock: MockFn;
@@ -31,6 +33,8 @@ type SignalToolResultTestMocks = {
 const waitForTransportReadyMock = vi.hoisted(() => vi.fn()) as unknown as MockFn;
 const enqueueSystemEventMock = vi.hoisted(() => vi.fn()) as unknown as MockFn;
 const sendMock = vi.hoisted(() => vi.fn()) as unknown as MockFn;
+const sendTypingMock = vi.hoisted(() => vi.fn()) as unknown as MockFn;
+const sendReadReceiptMock = vi.hoisted(() => vi.fn()) as unknown as MockFn;
 const replyMock = vi.hoisted(() => vi.fn()) as unknown as MockFn;
 const updateLastRouteMock = vi.hoisted(() => vi.fn()) as unknown as MockFn;
 const readAllowFromStoreMock = vi.hoisted(() => vi.fn()) as unknown as MockFn;
@@ -120,6 +124,8 @@ export function getSignalToolResultTestMocks(): SignalToolResultTestMocks {
     waitForTransportReadyMock,
     enqueueSystemEventMock,
     sendMock,
+    sendTypingMock,
+    sendReadReceiptMock,
     replyMock,
     updateLastRouteMock,
     readAllowFromStoreMock,
@@ -266,8 +272,8 @@ vi.mock("./send.js", async () => {
   return {
     ...actual,
     sendMessageSignal: (...args: unknown[]) => sendMock(...args),
-    sendTypingSignal: vi.fn().mockResolvedValue(true),
-    sendReadReceiptSignal: vi.fn().mockResolvedValue(true),
+    sendTypingSignal: (...args: unknown[]) => sendTypingMock(...args),
+    sendReadReceiptSignal: (...args: unknown[]) => sendReadReceiptMock(...args),
   };
 });
 
@@ -406,6 +412,8 @@ export function installSignalToolResultTestHooks() {
     };
 
     sendMock.mockReset().mockResolvedValue(undefined);
+    sendTypingMock.mockReset().mockResolvedValue(true);
+    sendReadReceiptMock.mockReset().mockResolvedValue(true);
     replyMock.mockReset();
     updateLastRouteMock.mockReset();
     streamMock.mockReset();
