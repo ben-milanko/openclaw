@@ -1,0 +1,122 @@
+name: Ben Gateway package
+
+on:
+  push:
+    branches: ["ci/ben-gateway-package-*"]
+    paths: [.github/workflows/ben-gateway-package.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ben-gateway-package-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    if: github.repository == 'ben-milanko/openclaw'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      EXPECTED_SOURCE: fe3db89a789d7ed3ce8375f6756e61f02e220bc4
+      EXPECTED_TREE: ce2d7b9e17d582f1e6d3ac302b1fdc10d9eeb358
+      GOMEMLIMIT: 4GiB
+      GOMAXPROCS: "2"
+      GOGC: "100"
+      NODE_OPTIONS: --max-old-space-size=6144
+      OPENCLAW_DOCKER_PACKAGE_BUILD_TIMEOUT_MS: "5400000"
+    steps:
+      # The PR changes this workflow; package bytes come only from the reviewed stable merge.
+      - name: Checkout reviewed package source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ben-milanko/openclaw
+          ref: fe3db89a789d7ed3ce8375f6756e61f02e220bc4
+          persist-credentials: false
+
+      - name: Verify source and runner capacity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          test "$(git rev-parse 'HEAD^{tree}')" = "$EXPECTED_TREE"
+          test -z "$(git status --porcelain)"
+          mkdir "$RUNNER_TEMP/ben-package"
+          python3 - <<'PYTHON'
+          import json, os, shutil
+          from pathlib import Path
+          memory = dict(line.split(':', 1) for line in Path('/proc/meminfo').read_text().splitlines())
+          available = int(memory['MemAvailable'].split()[0]) * 1024
+          free = shutil.disk_usage(os.environ['RUNNER_TEMP']).free
+          Path(os.environ['RUNNER_TEMP'], 'ben-package', 'runner.json').write_text(json.dumps({
+              'availableMemoryBytes': available, 'freeDiskBytes': free, 'cpuCount': os.cpu_count(),
+          }, indent=2) + '\n')
+          assert available >= 12 * 1024**3, 'Runner needs at least 12 GiB available RAM'
+          assert free >= 20 * 1024**3, 'Runner needs at least 20 GiB free disk'
+          PYTHON
+
+      - name: Set up pinned package toolchain
+        uses: ./.github/actions/setup-node-env
+        with:
+          node-version: 26.12.1
+          install-bun: "false"
+          cache-mode: "off"
+
+      - name: Build and check canonical package
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = v26.12.1
+          test "$(pnpm --version)" = 12.15.0
+          node scripts/package-openclaw-for-docker.mjs \
+            --output-dir "$RUNNER_TEMP/ben-package" \
+            --output-name openclaw-2026.11.2-ben-fe3db89a.tgz \
+            2>&1 | tee "$RUNNER_TEMP/ben-package/build.log"
+          test -z "$(git status --porcelain)"
+
+      - name: Verify packaged identity and retain digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import hashlib, json, os, tarfile
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'], 'ben-package')
+          archive = root / 'openclaw-2026.11.2-ben-fe3db89a.tgz'
+          with tarfile.open(archive) as package:
+              manifest = json.load(package.extractfile('package/package.json'))
+              build = json.load(package.extractfile('package/dist/build-info.json'))
+          assert manifest['version'] == build['version'] == '2026.11.2'
+          assert manifest['openclaw']['schemaVersions'] == {'state': 22, 'agent': 27}
+          assert build['commit'] == os.environ['EXPECTED_SOURCE']
+          assert isinstance(build.get('buildId'), str) and build['buildId']
+          with archive.open('rb') as stream:
+              digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+          (root / 'package-receipt.json').write_text(json.dumps({
+              'sourceCommit': os.environ['EXPECTED_SOURCE'], 'sourceTree': os.environ['EXPECTED_TREE'],
+              'archive': archive.name, 'sha256': digest, 'build': build,
+              'runId': os.environ['GITHUB_RUN_ID'], 'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'scope': 'Candidate only; no deployment, release publication or external plugin activation',
+          }, indent=2) + '\n')
+          PYTHON
+
+      - name: Upload verified candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ben-gateway-2026.11.2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ben-package/openclaw-2026.11.2-ben-fe3db89a.tgz
+            ${{ runner.temp }}/ben-package/package-receipt.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Retain build diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ben-gateway-build-log-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ben-package/build.log
+            ${{ runner.temp }}/ben-package/runner.json
+          if-no-files-found: ignore
+          retention-days: 14
