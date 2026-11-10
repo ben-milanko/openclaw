@@ -345,7 +345,7 @@ extensions/file-transfer/src/tools/dir-list-tool.ts	2
 extensions/file-transfer/src/tools/file-fetch-tool.ts	1
 extensions/file-transfer/src/tools/file-write-tool.ts	1
 extensions/firecrawl/index.ts	2
-extensions/firecrawl/src/config.ts	3
+extensions/firecrawl/src/config.ts	2
 extensions/firecrawl/src/firecrawl-fetch-provider-shared.ts	5
 extensions/github-copilot/embeddings.ts	3
 extensions/github-copilot/index.ts	3
@@ -1096,7 +1096,7 @@ packages/memory-host-sdk/src/host/memory-schema-recall.ts	1
 packages/memory-host-sdk/src/host/memory-schema.ts	7
 packages/memory-host-sdk/src/host/multimodal.ts	1
 packages/memory-host-sdk/src/host/read-retry.ts	1
-packages/memory-host-sdk/src/host/session-files.ts	8
+packages/memory-host-sdk/src/host/session-files.ts	1
 packages/memory-host-sdk/src/host/session-reset-recall.ts	1
 packages/memory-host-sdk/src/host/sqlite-vec.ts	3
 packages/memory-host-sdk/src/host/sqlite.ts	1
