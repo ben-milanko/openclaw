@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      EXPECTED_SOURCE: a1ffc78e72ee4c1448831dd30caa4bbf61ac9ad6
-      EXPECTED_TREE: 54742d17326016d389f6612e86669c37b11f872f
+      EXPECTED_SOURCE: 5c6bb2cec7cfbbe0b6d12262c766a631580737e1
+      EXPECTED_TREE: d88f4f6f845aa783bcf53efb63007c2bf7c459b7
       GOMEMLIMIT: 4GiB
       GOMAXPROCS: "2"
       GOGC: "100"
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ben-milanko/openclaw
-          ref: a1ffc78e72ee4c1448831dd30caa4bbf61ac9ad6
+          ref: 5c6bb2cec7cfbbe0b6d12262c766a631580737e1
           persist-credentials: false
 
       - name: Verify source and runner capacity
@@ -62,6 +62,21 @@ jobs:
           install-bun: "false"
           cache-mode: "off"
 
+      - name: Check production types
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm tsgo:core
+          pnpm tsgo:ui
+          pnpm tsgo:extensions
+
+      - name: Check integration typed lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --import ./scripts/tsx.mjs scripts/run-oxlint.mts --type-aware --tsconfig config/tsconfig/oxlint.core.json src/cli/update-cli/update-command-execution.ts src/infra/update-managed-service-handoff.ts
+          node --import ./scripts/tsx.mjs scripts/run-oxlint.mts --type-aware --tsconfig config/tsconfig/oxlint.scripts.json test/scripts/tsdown-declaration-resolution.test.ts
+
       - name: Build and check canonical package
         shell: bash
         run: |
@@ -70,7 +85,7 @@ jobs:
           test "$(pnpm --version)" = 12.15.0
           node scripts/package-openclaw-for-docker.mjs \
             --output-dir "$RUNNER_TEMP/ben-package" \
-            --output-name openclaw-2026.11.2-ben-a1ffc78e.tgz \
+            --output-name openclaw-2026.11.3-ben-5c6bb2ce.tgz \
             2>&1 | tee "$RUNNER_TEMP/ben-package/build.log"
           test -z "$(git status --porcelain)"
 
@@ -82,11 +97,11 @@ jobs:
           import hashlib, json, os, tarfile
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP'], 'ben-package')
-          archive = root / 'openclaw-2026.11.2-ben-a1ffc78e.tgz'
+          archive = root / 'openclaw-2026.11.3-ben-5c6bb2ce.tgz'
           with tarfile.open(archive) as package:
               manifest = json.load(package.extractfile('package/package.json'))
               build = json.load(package.extractfile('package/dist/build-info.json'))
-          assert manifest['version'] == build['version'] == '2026.11.2'
+          assert manifest['version'] == build['version'] == '2026.11.3'
           assert manifest['openclaw']['schemaVersions'] == {'state': 22, 'agent': 27}
           assert build['commit'] == os.environ['EXPECTED_SOURCE']
           assert isinstance(build.get('buildId'), str) and build['buildId']
@@ -103,9 +118,9 @@ jobs:
       - name: Upload verified candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: ben-gateway-2026.11.2-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ben-gateway-2026.11.3-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/ben-package/openclaw-2026.11.2-ben-a1ffc78e.tgz
+            ${{ runner.temp }}/ben-package/openclaw-2026.11.3-ben-5c6bb2ce.tgz
             ${{ runner.temp }}/ben-package/package-receipt.json
           if-no-files-found: error
           retention-days: 14
