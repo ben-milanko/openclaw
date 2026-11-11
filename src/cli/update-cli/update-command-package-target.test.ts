@@ -68,13 +68,12 @@ it("uses the reviewed bytes even when the source changes after admission, then c
   expect(await fs.readdir(root)).toEqual([path.basename(target.path)]);
 });
 
-it("pins on the configured temp filesystem when the fixed system temp root is over quota", async () => {
+it("pins on the configured cache filesystem when the fixed system temp root is over quota", async () => {
   const resolveTempRoot = tempRoot.resolvePreferredOpenClawTmpDir;
   const { bytes, target } = await fixture();
   const configuredRoot = dirs.make("openclaw-pin-temp-override-");
-  for (const variable of ["TMPDIR", "TMP", "TEMP"]) {
-    vi.stubEnv(variable, configuredRoot);
-  }
+  vi.stubEnv("OPENCLAW_UPDATE_IN_PROGRESS", undefined);
+  vi.stubEnv("XDG_CACHE_HOME", configuredRoot);
   vi.mocked(tempRoot.resolvePreferredOpenClawTmpDir).mockImplementation((options) => {
     if (!options?.preferredDir?.startsWith(`${configuredRoot}${path.sep}`)) {
       throw Object.assign(new Error("The fixed system temp filesystem is over quota"), {
