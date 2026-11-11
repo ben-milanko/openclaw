@@ -12,8 +12,10 @@ import {
 import { readArchiveEntry } from "../../infra/archive.js";
 import { removePathWithinRoot } from "../../infra/fs-safe-remove.js";
 import { readPackageName } from "../../infra/package-json.js";
-import { createPrivateSqliteTempDirectory } from "../../infra/sqlite-private-directory.js";
-import { resolvePreferredOpenClawTmpDir } from "../../infra/tmp-openclaw-dir.js";
+import {
+  createPrivateSqliteTempDirectory,
+  resolvePrivateSqliteSnapshotStagingRoot,
+} from "../../infra/sqlite-private-directory.js";
 import { hasCommandProcessCleanupError } from "../../process/exec-result.js";
 import { UpdatePreMutationError, type UpdateCommandOptions } from "./shared.js";
 import { readPackageUpdateIdentity } from "./update-command-package-identity.js";
@@ -88,7 +90,7 @@ export async function withPinnedPackageUpdate<T>(
   if (opts.dryRun) {
     return await use({ ...opts, packageTarget: target, tag: target.path });
   }
-  const rootIdentity = await readDirectoryIdentity(resolvePreferredOpenClawTmpDir());
+  const rootIdentity = await readDirectoryIdentity(resolvePrivateSqliteSnapshotStagingRoot());
   const tempRoot = rootIdentity.realPath;
   const assertRoot = () => assertDirectoryIdentitySync(tempRoot, rootIdentity);
   assertRoot();
