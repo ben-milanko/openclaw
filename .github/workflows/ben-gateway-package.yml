@@ -18,20 +18,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      EXPECTED_SOURCE: 5c6bb2cec7cfbbe0b6d12262c766a631580737e1
-      EXPECTED_TREE: d88f4f6f845aa783bcf53efb63007c2bf7c459b7
+      EXPECTED_SOURCE: e7090e60125a44150f787a227c26e518940f3d38
+      EXPECTED_TREE: 3f319964582099badacf6383420619a4c32a9b56
       GOMEMLIMIT: 4GiB
       GOMAXPROCS: "2"
       GOGC: "100"
       NODE_OPTIONS: --max-old-space-size=6144
       OPENCLAW_DOCKER_PACKAGE_BUILD_TIMEOUT_MS: "5400000"
     steps:
-      # The PR changes this workflow; package bytes come only from the reviewed stable merge.
-      - name: Checkout reviewed package source
+      # The PR changes this workflow; package bytes come only from the pinned stable backport.
+      - name: Checkout pinned package source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ben-milanko/openclaw
-          ref: 5c6bb2cec7cfbbe0b6d12262c766a631580737e1
+          ref: e7090e60125a44150f787a227c26e518940f3d38
           persist-credentials: false
 
       - name: Verify source and runner capacity
@@ -74,7 +74,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --import ./scripts/tsx.mjs scripts/run-oxlint.mts --type-aware --tsconfig config/tsconfig/oxlint.core.json src/cli/update-cli/update-command-execution.ts src/infra/update-managed-service-handoff.ts
+          node --import ./scripts/tsx.mjs scripts/run-oxlint.mts --type-aware --tsconfig config/tsconfig/oxlint.core.json src/cli/update-cli/update-command-execution.ts src/infra/update-managed-service-handoff.ts src/infra/backup-sqlite-snapshot.ts src/infra/update-database-engine-admission.test.ts
           node --import ./scripts/tsx.mjs scripts/run-oxlint.mts --type-aware --tsconfig config/tsconfig/oxlint.scripts.json test/scripts/tsdown-declaration-resolution.test.ts
 
       - name: Build and check canonical package
@@ -85,7 +85,7 @@ jobs:
           test "$(pnpm --version)" = 12.15.0
           node scripts/package-openclaw-for-docker.mjs \
             --output-dir "$RUNNER_TEMP/ben-package" \
-            --output-name openclaw-2026.11.3-ben-5c6bb2ce.tgz \
+            --output-name openclaw-2026.11.3-ben-e7090e60.tgz \
             2>&1 | tee "$RUNNER_TEMP/ben-package/build.log"
           test -z "$(git status --porcelain)"
 
@@ -97,7 +97,7 @@ jobs:
           import hashlib, json, os, tarfile
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP'], 'ben-package')
-          archive = root / 'openclaw-2026.11.3-ben-5c6bb2ce.tgz'
+          archive = root / 'openclaw-2026.11.3-ben-e7090e60.tgz'
           with tarfile.open(archive) as package:
               manifest = json.load(package.extractfile('package/package.json'))
               build = json.load(package.extractfile('package/dist/build-info.json'))
@@ -120,7 +120,7 @@ jobs:
         with:
           name: ben-gateway-2026.11.3-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/ben-package/openclaw-2026.11.3-ben-5c6bb2ce.tgz
+            ${{ runner.temp }}/ben-package/openclaw-2026.11.3-ben-e7090e60.tgz
             ${{ runner.temp }}/ben-package/package-receipt.json
           if-no-files-found: error
           retention-days: 14
