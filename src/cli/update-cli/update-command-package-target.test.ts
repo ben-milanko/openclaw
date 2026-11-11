@@ -13,7 +13,10 @@ import {
 } from "./update-command-package-target.js";
 
 const dirs = useAutoCleanupTempDirTracker(afterEach);
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 
 async function fixture() {
   const root = dirs.make("openclaw-exact-package-");
@@ -63,6 +66,31 @@ it("uses the reviewed bytes even when the source changes after admission, then c
   });
   await expect(fs.stat(pinned)).rejects.toMatchObject({ code: "ENOENT" });
   expect(await fs.readdir(root)).toEqual([path.basename(target.path)]);
+});
+
+it("pins on the configured temp filesystem when the fixed system temp root is over quota", async () => {
+  const resolveTempRoot = tempRoot.resolvePreferredOpenClawTmpDir;
+  const { bytes, target } = await fixture();
+  const configuredRoot = dirs.make("openclaw-pin-temp-override-");
+  for (const variable of ["TMPDIR", "TMP", "TEMP"]) {
+    vi.stubEnv(variable, configuredRoot);
+  }
+  vi.mocked(tempRoot.resolvePreferredOpenClawTmpDir).mockImplementation((options) => {
+    if (!options?.preferredDir?.startsWith(`${configuredRoot}${path.sep}`)) {
+      throw Object.assign(new Error("The fixed system temp filesystem is over quota"), {
+        code: "EDQUOT",
+      });
+    }
+    return resolveTempRoot(options);
+  });
+  let pinned = "";
+  await withPinnedPackageUpdate({ packageTarget: target }, async (opts) => {
+    pinned = opts.tag!;
+    expect(pinned.startsWith(`${await fs.realpath(configuredRoot)}${path.sep}`)).toBe(true);
+    expect(await fs.readFile(pinned)).toEqual(bytes);
+    expect((await fs.stat(path.dirname(pinned))).mode & 0o777).toBe(0o700);
+  });
+  await expect(fs.stat(pinned)).rejects.toMatchObject({ code: "ENOENT" });
 });
 
 it("rejects a replaced archive before invoking any update operation", async () => {
