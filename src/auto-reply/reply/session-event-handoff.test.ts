@@ -31,6 +31,11 @@ import {
   peekSystemEventEntries,
   resetSystemEventsForTest,
 } from "../../infra/system-events.js";
+import { captureAmbientGatewayOperatorAuthority } from "../../gateway/operator-invocation-authority.js";
+import {
+  getPluginRuntimeGatewayRequestScope,
+  withPluginRuntimeGatewayRequestScope,
+} from "../../plugins/runtime/gateway-request-scope.js";
 import * as gatewayWork from "../../process/gateway-work-admission.js";
 import { openOpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
 import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
@@ -49,7 +54,7 @@ import { prepareSessionEventTargetForHost } from "./session-event-target.js";
 // These cases stop before turn admission. Unexpected dispatch is a failure,
 // never a synthetic adoption/settlement supplied by the fixture.
 const dispatch = vi.hoisted(() =>
-  vi.fn(() => {
+  vi.fn(async () => {
     throw new Error("Unexpected reply dispatch for a retired event target");
   }),
 );
@@ -130,6 +135,48 @@ afterAll(() => {
 });
 
 describe("session event target custody", () => {
+  it("starts a completion after its producer's Gateway request retires", async () => {
+    await withTargetFixture(async ({ env }) => {
+      const target = await captureSessionEventTargetForHost("main", sessionKey, { env });
+      let requestActive = true;
+      const resolveGatewayContext = () => undefined;
+      dispatch.mockImplementationOnce(async () => {
+        await captureAmbientGatewayOperatorAuthority({
+          missingBindingError: () => new Error("Missing completion Gateway binding"),
+        });
+        expect(getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext).toBe(
+          resolveGatewayContext,
+        );
+        throw new Error("Completion reached independent dispatch");
+      });
+      const scope = {
+        isWebchatConnect: () => true,
+        hasCurrentClientAuthority: () => requestActive,
+        resolveGatewayContext,
+      };
+      const receipt = withPluginRuntimeGatewayRequestScope(scope, () =>
+        enqueueSessionEventForHost("Process completed", {
+          agentId: "main",
+          sessionKey,
+          source: "exec",
+          expectedTarget: target,
+        }),
+      );
+      requestActive = false;
+      await expect(receipt.settled).resolves.toMatchObject({
+        status: "failed",
+        error: "Error: Completion reached independent dispatch",
+      });
+      await expect(
+        withPluginRuntimeGatewayRequestScope(scope, () =>
+          captureAmbientGatewayOperatorAuthority({
+            missingBindingError: () => new Error("Missing"),
+          }),
+        ),
+      ).rejects.toThrow("Gateway caller authority is no longer active");
+    });
+  });
+
   it("preserves cold event capture across an empty usage refresh", async () => {
     const { refreshCostUsageCacheForAgent } =
       await import("../../infra/session-cost-usage-aggregation.js");
