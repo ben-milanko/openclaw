@@ -1,5 +1,6 @@
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { isAgentDeletionBlocked } from "../../agents/agent-lifecycle-registry.js";
+import { withoutGatewayToolCallerIdentity } from "../../agents/tools/gateway-caller-context.js";
 import { resolveConfiguredAgentId } from "../../agents/agent-scope-config.js";
 import { getRuntimeConfigSnapshotMetadata } from "../../config/runtime-snapshot.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
@@ -25,6 +26,10 @@ import {
 } from "../../infra/system-events.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { channelRouteTargetsMatchExact } from "../../plugin-sdk/channel-route.js";
+import {
+  getPluginRuntimeGatewayRequestScope,
+  withPluginRuntimeGatewayContextResolver,
+} from "../../plugins/runtime/gateway-request-scope.js";
 import { runWithGatewayDetachedWorkContinuation } from "../../process/gateway-work-admission.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
 import { createDeferredCore } from "../../shared/deferred.js";
@@ -61,6 +66,18 @@ export type {
 } from "./session-event-contract.js";
 
 const log = createSubsystemLogger("session-events");
+
+/** Events retain explicit producer authority, not the launching request's ambient scope. */
+function runWithSessionEventExecutionScope<T>(run: () => T): T {
+  const resolver = getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext;
+  return withoutGatewayToolCallerIdentity(() =>
+    withPluginRuntimeGatewayContextResolver(
+      resolver,
+      () => runWithoutOwnedSessionTranscriptWrites(run),
+      { inheritRequestScope: false },
+    ),
+  );
+}
 
 /** Producer-owned occurrence; passive notices continue to use enqueueSystemEvent. */
 export function enqueueSessionEventForHost(
@@ -386,7 +403,7 @@ export function enqueueSessionEventForHost(
   // Completion outlives the producer's request scope and transcript writer.
   // Keep detached work through settlement; explicit request/Stop signals above
   // still cancel the occurrence and join its native execution owner.
-  void runWithoutOwnedSessionTranscriptWrites(() =>
+  void runWithSessionEventExecutionScope(() =>
     runWithGatewayDetachedWorkContinuation(async () => {
       admissionStarted = true;
       assertOwnerCurrent();
