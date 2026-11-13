@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      EXPECTED_SOURCE: 154d17d00c3e606487f1565d775e068d4a4b820d
-      EXPECTED_TREE: 70f274271088c09c97c938b202440e4a61bb08c3
+      EXPECTED_SOURCE: 07684f40ee80fb7f09860e2a338fd9a8f3cfbdaf
+      EXPECTED_TREE: ad27e38e704812b347dba263a0d115ec1f3504da
       GOMEMLIMIT: 4GiB
       GOMAXPROCS: "2"
       GOGC: "100"
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ben-milanko/openclaw
-          ref: 154d17d00c3e606487f1565d775e068d4a4b820d
+          ref: 07684f40ee80fb7f09860e2a338fd9a8f3cfbdaf
           persist-credentials: false
           fetch-depth: 2
 
@@ -63,31 +63,33 @@ jobs:
           install-bun: "false"
           cache-mode: "off"
 
-      - name: Prove the quota regression and check package pinning
+      - name: Prove completion request-lifetime regression
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.cache/openclaw-pin-tests"
-          chmod 700 "$HOME/.cache/openclaw-pin-tests"
-          export TMPDIR="$HOME/.cache/openclaw-pin-tests" SQLITE_TMPDIR="$HOME/.cache/openclaw-pin-tests"
-          pin_source=src/cli/update-cli/update-command-package-target.ts
-          trap 'git restore --source=HEAD -- "$pin_source"' EXIT
-          git show "HEAD^:$pin_source" > "$pin_source"
+          mkdir -p "$HOME/.cache/openclaw-completion-tests"
+          chmod 700 "$HOME/.cache/openclaw-completion-tests"
+          export TMPDIR="$HOME/.cache/openclaw-completion-tests" SQLITE_TMPDIR="$HOME/.cache/openclaw-completion-tests"
+          context_source=src/auto-reply/reply/session-event-context.ts
+          handoff_source=src/auto-reply/reply/session-event-handoff.ts
+          trap 'git restore --source=HEAD -- "$context_source" "$handoff_source"' EXIT
+          git show "HEAD^:$context_source" > "$context_source"
+          git show "HEAD^:$handoff_source" > "$handoff_source"
           set +e
           FS_MODULE_CACHE_PATH="$RUNNER_TEMP/ben-package/regression-before-cache.json" \
-            node scripts/run-vitest.mjs src/cli/update-cli/update-command-package-target.test.ts \
-            --maxWorkers=1 --testNamePattern 'pins on the configured cache filesystem' \
+            node scripts/run-vitest.mjs src/auto-reply/reply/session-event-handoff.test.ts \
+            --maxWorkers=1 --testNamePattern 'starts a completion after' \
             > "$RUNNER_TEMP/ben-package/regression-before.log" 2>&1
           baseline_exit=$?
           set -e
-          git restore --source=HEAD -- "$pin_source"
+          git restore --source=HEAD -- "$context_source" "$handoff_source"
           trap - EXIT
           test "$baseline_exit" -eq 1
-          grep -F 'The fixed system temp filesystem is over quota' "$RUNNER_TEMP/ben-package/regression-before.log"
+          grep -F 'Gateway caller authority is no longer active' "$RUNNER_TEMP/ben-package/regression-before.log"
           FS_MODULE_CACHE_PATH="$RUNNER_TEMP/ben-package/regression-after-cache.json" \
-            node scripts/run-vitest.mjs src/cli/update-cli/update-command-package-target.test.ts \
-            src/cli/update-cli/update-command-package-target-staging.test.ts src/infra/tmp-openclaw-dir.test.ts \
+            node scripts/run-vitest.mjs src/auto-reply/reply/session-event-handoff.test.ts \
             --maxWorkers=1 2>&1 | tee "$RUNNER_TEMP/ben-package/regression-after.log"
+          node scripts/run-tsgo.mjs -p test/tsconfig/tsconfig.core.test.infra.json --incremental --declaration false
           test -z "$(git status --porcelain)"
 
       - name: Check production types
@@ -102,7 +104,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --import ./scripts/tsx.mjs scripts/run-oxlint.mts --type-aware --tsconfig config/tsconfig/oxlint.core.json src/cli/update-cli/update-command-execution.ts src/infra/update-managed-service-handoff.ts src/infra/backup-sqlite-snapshot.ts src/infra/update-database-engine-admission.test.ts src/cli/update-cli/update-command-package-target.ts src/cli/update-cli/update-command-package-target.test.ts
+          node --import ./scripts/tsx.mjs scripts/run-oxlint.mts --type-aware --tsconfig config/tsconfig/oxlint.core.json src/cli/update-cli/update-command-execution.ts src/infra/update-managed-service-handoff.ts src/infra/backup-sqlite-snapshot.ts src/infra/update-database-engine-admission.test.ts src/cli/update-cli/update-command-package-target.ts src/cli/update-cli/update-command-package-target.test.ts src/auto-reply/reply/session-event-context.ts src/auto-reply/reply/session-event-handoff.ts src/auto-reply/reply/session-event-handoff.test.ts
           node --import ./scripts/tsx.mjs scripts/run-oxlint.mts --type-aware --tsconfig config/tsconfig/oxlint.scripts.json test/scripts/tsdown-declaration-resolution.test.ts
 
       - name: Build and check canonical package
@@ -113,7 +115,7 @@ jobs:
           test "$(pnpm --version)" = 12.15.0
           node scripts/package-openclaw-for-docker.mjs \
             --output-dir "$RUNNER_TEMP/ben-package" \
-            --output-name openclaw-2026.11.3-ben-154d17d0.tgz \
+            --output-name openclaw-2026.11.3-ben-07684f40.tgz \
             2>&1 | tee "$RUNNER_TEMP/ben-package/build.log"
           test -z "$(git status --porcelain)"
 
@@ -125,7 +127,7 @@ jobs:
           import hashlib, json, os, tarfile
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP'], 'ben-package')
-          archive = root / 'openclaw-2026.11.3-ben-154d17d0.tgz'
+          archive = root / 'openclaw-2026.11.3-ben-07684f40.tgz'
           with tarfile.open(archive) as package:
               manifest = json.load(package.extractfile('package/package.json'))
               build = json.load(package.extractfile('package/dist/build-info.json'))
@@ -148,7 +150,7 @@ jobs:
         with:
           name: ben-gateway-2026.11.3-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/ben-package/openclaw-2026.11.3-ben-154d17d0.tgz
+            ${{ runner.temp }}/ben-package/openclaw-2026.11.3-ben-07684f40.tgz
             ${{ runner.temp }}/ben-package/package-receipt.json
           if-no-files-found: error
           retention-days: 14
