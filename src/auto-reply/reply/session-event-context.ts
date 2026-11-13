@@ -1,10 +1,16 @@
 import { resolveConfiguredAgentId } from "../../agents/agent-scope-config.js";
+import { withoutGatewayToolCallerIdentity } from "../../agents/tools/gateway-caller-context.js";
 import { getRuntimeConfigSnapshotMetadata } from "../../config/runtime-snapshot.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
+import { runWithoutOwnedSessionTranscriptWrites } from "../../config/sessions/transcript-write-context-owner.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolveCreatorSandbox } from "../../gateway/operator-role-policy.js";
 import { readExecRequestOwners } from "../../infra/exec-request-context.js";
 import { channelRouteTargetsMatchExact } from "../../plugin-sdk/channel-route.js";
+import {
+  getPluginRuntimeGatewayRequestScope,
+  withPluginRuntimeGatewayContextResolver,
+} from "../../plugins/runtime/gateway-request-scope.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
 import type { DeliveryContext } from "../../utils/delivery-context.types.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
@@ -18,6 +24,18 @@ import {
   resolveSessionEventKey,
 } from "./session-event-target.js";
 import { setChannelSourceTurnId } from "./source-turn-id.js";
+
+/** Events retain explicit producer authority, not the launching request's ambient scope. */
+export function runWithSessionEventExecutionScope<T>(run: () => T): T {
+  const resolver = getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext;
+  return withoutGatewayToolCallerIdentity(() =>
+    withPluginRuntimeGatewayContextResolver(
+      resolver,
+      () => runWithoutOwnedSessionTranscriptWrites(run),
+      { inheritRequestScope: false },
+    ),
+  );
+}
 
 /** Prepare immutable producer context before the receipt acquires occurrence custody. */
 export function prepareSessionEventInput(text: string, options: SessionEventOptions) {

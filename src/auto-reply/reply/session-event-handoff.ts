@@ -5,7 +5,6 @@ import { resolveAgentRunErrorLifecycleFields } from "../../agents/run-terminatio
 import { getRuntimeConfigSnapshotMetadata } from "../../config/runtime-snapshot.js";
 import type { SessionEntryCreationOperation } from "../../config/sessions/session-accessor.sqlite-entry-cache.types.js";
 import { SessionWorkStartError } from "../../config/sessions/session-work-start.js";
-import { runWithoutOwnedSessionTranscriptWrites } from "../../config/sessions/transcript-write-context-owner.js";
 import { resolveCronRunToolsAllow } from "../../cron/tools-allow.js";
 import { execRequestAbortSignal, withExecRequestOwners } from "../../infra/exec-request-context.js";
 import type { SourceDeliveryOutcome } from "../../infra/outbound/source-delivery-plan.types.js";
@@ -35,6 +34,7 @@ import {
   buildSessionEventContext,
   prepareSessionEventInput,
   resolveSessionEventExecRequestOwners,
+  runWithSessionEventExecutionScope,
 } from "./session-event-context.js";
 import type {
   SessionEventOptions,
@@ -461,7 +461,7 @@ export function enqueueSessionEventForHost(
   // Completion outlives the producer's request scope and transcript writer.
   // Keep detached work through settlement; explicit request/Stop signals above
   // still cancel the occurrence and join its native execution owner.
-  void runWithoutOwnedSessionTranscriptWrites(() =>
+  void runWithSessionEventExecutionScope(() =>
     runWithGatewayDetachedWorkContinuation(async () => {
       admissionStarted = true;
       await readAgentDeletionJournalStatusInWorker(agentId, { env }, signal);
