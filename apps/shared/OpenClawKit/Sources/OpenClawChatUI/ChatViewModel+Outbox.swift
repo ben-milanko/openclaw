@@ -401,7 +401,7 @@ extension OpenClawChatViewModel {
         guard self.isCurrentSession(session) else { return false }
         let expectedSessionSettings = self.durableSessionSettingsExpectation()
         let thinking = self.effectiveThinkingLevelForSend(
-            self.preferredThinkingLevel,
+            self.thinkingLevelForNewSend,
             sessionKey: session.key,
             canonicalSessionKey: deliverySessionKey,
             agentID: agentID,

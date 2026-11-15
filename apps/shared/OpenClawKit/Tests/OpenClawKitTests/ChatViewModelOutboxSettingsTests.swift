@@ -16,6 +16,29 @@ private actor SettingsPatchCounter {
 }
 
 struct ChatViewModelOutboxSettingsTests {
+    @Test @MainActor
+    func `offline enqueue captures resolved inherited thinking`() async throws {
+        let (store, _, databaseDirectory) = try makeOutboxStore()
+        defer { try? FileManager.default.removeItem(at: databaseDirectory) }
+        var session = outboxSessionEntry(key: "main", thinkingLevels: ["low", "medium"])
+        session.thinkingLevel = "medium"
+        let transport = OutboxTestTransport(healthy: false, sessions: [session])
+        let vm = await makeOutboxViewModel(transport: transport, outbox: store)
+        vm.load()
+        await vm.bootstrapTask?.value
+        await waitForObservedState { vm.hasRestoredOutboxMessages }
+        #expect(!vm.prefersExplicitThinkingLevel)
+        #expect(vm.preferredThinkingLevel == "off")
+        #expect(vm.thinkingLevel == "medium")
+
+        vm.input = "keep thinking enabled"
+        let send = try #require(vm.send())
+        await send.value
+        let command = try #require(await store.loadCommands().first)
+        #expect(command.thinking == "medium")
+        #expect(await transport.state.sentMessages.isEmpty)
+    }
+
     @Test func `background replay uses its command owned session settings`() async throws {
         let (store, _, databaseDirectory) = try makeOutboxStore()
         defer { try? FileManager.default.removeItem(at: databaseDirectory) }

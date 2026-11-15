@@ -12013,6 +12013,30 @@ struct ChatViewModelTests {
         #expect(await MainActor.run { vm.thinkingLevel } == "max")
     }
 
+    @Test(arguments: [false, true])
+    func `send follows resolved thinking unless a local preference is explicit`(explicit: Bool) async throws {
+        let sessions = sessionsResponse(
+            sessionEntry(
+                key: "main",
+                updatedAt: 1,
+                model: "reasoning-model",
+                modelProvider: "openai",
+                thinkingLevel: "medium",
+                thinkingLevels: [thinkingOption("low"), thinkingOption("medium")]))
+        let (transport, vm) = await makeViewModel(
+            historyResponses: [historyPayloadWithoutRunState(thinkingLevel: "off")],
+            sessionsResponses: [sessions],
+            initialThinkingLevel: explicit ? "low" : nil)
+
+        try await loadAndWaitBootstrap(vm: vm, sessionId: "sess-main")
+        let expected = explicit ? "low" : "medium"
+        #expect(await MainActor.run { vm.preferredThinkingLevel } == (explicit ? "low" : "off"))
+        #expect(await MainActor.run { vm.thinkingLevel } == expected)
+        let send = await sendUserMessage(vm, text: "hello")
+        await send?.value
+        #expect(await transport.sentThinkingLevels() == [expected])
+    }
+
     @Test func `server provided thinking levels outside menu are preserved for send`() async throws {
         let history = historyPayloadWithoutRunState(thinkingLevel: "xhigh")
 
