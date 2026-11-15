@@ -183,6 +183,11 @@ extension OpenClawChatViewModel {
         sessions[index].thinkingLevel = thinkingLevel
     }
 
+    /// Inherited settings follow the resolved session value, not the last local preference.
+    var thinkingLevelForNewSend: String {
+        self.prefersExplicitThinkingLevel ? self.preferredThinkingLevel : self.thinkingLevel
+    }
+
     func effectiveThinkingLevelForSend(
         _ storedLevel: String,
         sessionKey: String? = nil,

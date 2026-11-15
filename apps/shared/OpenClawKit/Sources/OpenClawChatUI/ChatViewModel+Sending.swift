@@ -510,7 +510,7 @@ extension OpenClawChatViewModel {
     private func beginLiveSend(_ draft: SendDraft) -> LiveSendAttempt {
         errorText = nil
         let runId = UUID().uuidString
-        let storedThinkingLevel = preferredThinkingLevel
+        let storedThinkingLevel = thinkingLevelForNewSend
         pendingRuns.insert(runId)
         logDiagnostic(
             "chat.ui send queued sessionKey=\(draft.session.key) "
