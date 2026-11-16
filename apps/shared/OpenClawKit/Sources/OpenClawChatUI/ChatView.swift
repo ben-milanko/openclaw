@@ -783,17 +783,21 @@ extension OpenClawChatView {
             mediaPlaybackScope: ChatMediaAudioPlaybackScope(
                 ownerID: self.viewModel.mediaPlaybackOwnerID,
                 sessionTarget: self.viewModel.currentSessionTarget),
-            mediaPlaybackAllowed: { [weak viewModel,
-                                    target = self.viewModel.currentSessionTarget,
-                                    allowed = self.mediaPlaybackAllowed] in
+            mediaPlaybackAllowed: { [
+                weak viewModel,
+                target = self.viewModel.currentSessionTarget,
+                allowed = self.mediaPlaybackAllowed,
+            ] in
                 guard let viewModel, !viewModel.isTransportDetached,
                       viewModel.currentSessionTarget == target
                 else { return false }
                 return allowed()
             },
-            loadMediaArtifact: { [weak viewModel,
-                                 target = self.viewModel.currentSessionTarget,
-                                 transport = self.viewModel.transport] artifactId, kind, playback in
+            loadMediaArtifact: { [
+                weak viewModel,
+                target = self.viewModel.currentSessionTarget,
+                transport = self.viewModel.transport,
+            ] artifactId, kind, playback in
                 guard let viewModel, !viewModel.isTransportDetached,
                       viewModel.currentSessionTarget == target
                 else { return nil }
