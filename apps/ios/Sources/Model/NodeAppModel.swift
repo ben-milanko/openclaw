@@ -1117,6 +1117,11 @@ final class NodeAppModel {
         self.voiceWake.setEnabled(enabled)
         self.talkMode.attachGateway(self.operatorGateway)
         refreshOperatorAdminScopeFromStore()
+        if let stableID = GatewaySettingsStore.activeGatewayEntry()?.stableID {
+            self.selectedAgentId = GatewaySettingsStore.loadGatewaySelectedAgentId(stableID: stableID)
+            self.focusedChatSessionKey = GatewaySettingsStore.loadGatewayFocusedChatSession(stableID: stableID)
+            self.synchronizeTalkSessionKey()
+        }
         let talkEnabled = UserDefaults.standard.bool(forKey: "talk.enabled")
         self.setTalkEnabled(talkEnabled)
         self.locationService.setAuthorizationChangeHandler { [weak self] snapshot in
@@ -1670,7 +1675,7 @@ final class NodeAppModel {
                !decoded.agents.contains(where: { $0.id == selected && $0.isSelectableAgent })
             {
                 self.selectedAgentId = nil
-                self.focusedChatSessionKey = nil
+                self.focusChatSession(nil)
             }
             self.synchronizeTalkSessionKey()
             if let routingIdentity {
@@ -1706,7 +1711,7 @@ final class NodeAppModel {
                 agentId: self.selectedAgentId)
         }
         if selectedAgentChanged {
-            self.focusedChatSessionKey = nil
+            self.focusChatSession(nil)
             self.shareDeliveryChannel = nil
             self.shareDeliveryTo = nil
         }
@@ -3234,6 +3239,11 @@ extension NodeAppModel {
 
     func focusChatSession(_ sessionKey: String?) {
         self.focusedChatSessionKey = Self.trimmedOrNil(sessionKey)
+        if let stableID = self.chatTranscriptCacheGatewayID {
+            GatewaySettingsStore.saveGatewayFocusedChatSession(
+                stableID: stableID,
+                sessionKey: self.focusedChatSessionKey)
+        }
         self.synchronizeTalkSessionKey()
     }
 
@@ -3654,10 +3664,10 @@ extension NodeAppModel {
         self.gatewayDefaultAgentId = nil
         self.gatewayAgents = []
         self.selectedAgentId = GatewaySettingsStore.loadGatewaySelectedAgentId(stableID: stableID)
-        // Session keys are gateway-owned: transport reconnects keep the active chat,
-        // while initial connects and target changes must not inherit another route.
+        // Transport reconnects keep live focus; cold starts and target changes
+        // restore only the destination gateway's saved selection.
         if !preservingFocusedChatSession {
-            self.focusedChatSessionKey = nil
+            self.focusedChatSessionKey = GatewaySettingsStore.loadGatewayFocusedChatSession(stableID: stableID)
         }
         self.synchronizeTalkSessionKey()
         self.apnsLastRegisteredTokenHex = nil

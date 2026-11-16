@@ -824,6 +824,101 @@ private func withLastGatewaySnapshot(_ body: () -> Void) async {
         }
     }
 
+    @Test @MainActor func `cold launch restores the last chat and Talk target for the active gateway`() async {
+        await withLastGatewaySnapshot {
+            applyKeychain([gatewayRegistryKeychainEntry: nil, lastGatewayKeychainEntry: nil])
+            let gatewayID = "chat-restore-\(UUID().uuidString)"
+            defer {
+                GatewaySettingsStore.saveGatewayFocusedChatSession(stableID: gatewayID, sessionKey: nil)
+                GatewaySettingsStore.saveGatewaySelectedAgentId(stableID: gatewayID, agentId: nil)
+            }
+            #expect(GatewaySettingsStore.upsertGatewayRegistryEntry(.init(
+                stableID: gatewayID,
+                kind: .discovered,
+                name: "Chat gateway",
+                host: nil,
+                port: nil,
+                useTLS: true,
+                lastConnectedAtMs: nil), activate: true))
+            let first = NodeAppModel()
+            first.setSelectedAgentId("main")
+            first.openChat(sessionKey: "agent:main:incident-42")
+
+            let restored = NodeAppModel()
+            defer { restored.chatSessionRoutingRestoreTask?.cancel() }
+            #expect(restored.chatSessionKey == "agent:main:incident-42")
+            #expect(restored.talkMode.isUsingMainSessionKey("agent:main:incident-42"))
+            restored.prepareForGatewayConnect(stableID: gatewayID)
+            #expect(restored.chatSessionKey == "agent:main:incident-42")
+
+            // Explicit navigation still wins and is what the next launch restores.
+            restored.openChat(sessionKey: "agent:main:another-chat")
+            #expect(NodeAppModel().chatSessionKey == "agent:main:another-chat")
+            restored.openChat(sessionKey: nil)
+            #expect(NodeAppModel().chatSessionKey == "main")
+        }
+    }
+
+    @Test @MainActor func `gateway switching restores only its own chat and agent changes clear it`() async {
+        await withLastGatewaySnapshot {
+            applyKeychain([gatewayRegistryKeychainEntry: nil, lastGatewayKeychainEntry: nil])
+            let firstID = "chat-gateway-\(UUID().uuidString)-\u{00E9}"
+            let secondID = firstID.replacingOccurrences(of: "\u{00E9}", with: "e\u{0301}")
+            defer {
+                for gatewayID in [firstID, secondID] {
+                    GatewaySettingsStore.saveGatewayFocusedChatSession(stableID: gatewayID, sessionKey: nil)
+                    GatewaySettingsStore.saveGatewaySelectedAgentId(stableID: gatewayID, agentId: nil)
+                }
+            }
+            let model = NodeAppModel()
+            defer { model.chatSessionRoutingRestoreTask?.cancel() }
+            model.prepareForGatewayConnect(stableID: firstID)
+            model.openChat(sessionKey: "agent:main:first-chat")
+            model.prepareForGatewayConnect(stableID: secondID)
+            #expect(model.chatSessionKey == "main")
+            model.openChat(sessionKey: "agent:main:second-chat")
+            model.prepareForGatewayConnect(stableID: firstID)
+            #expect(model.chatSessionKey == "agent:main:first-chat")
+            model.prepareForGatewayConnect(stableID: firstID, preservingFocusedChatSession: true)
+            #expect(model.chatSessionKey == "agent:main:first-chat")
+
+            model.setSelectedAgentId("other-agent")
+            model.prepareForGatewayConnect(stableID: firstID)
+            #expect(model.chatSessionKey == "agent:other-agent:main")
+            model.prepareForGatewayConnect(stableID: secondID)
+            #expect(model.chatSessionKey == "agent:main:second-chat")
+        }
+    }
+
+    @Test @MainActor func `forget and full reset remove saved chat selections`() async {
+        await withLastGatewaySnapshot {
+            applyKeychain([gatewayRegistryKeychainEntry: nil, lastGatewayKeychainEntry: nil])
+            let firstID = "chat-forget-\(UUID().uuidString)"
+            let secondID = "chat-reset-\(UUID().uuidString)"
+            defer {
+                for gatewayID in [firstID, secondID] {
+                    GatewaySettingsStore.saveGatewayFocusedChatSession(stableID: gatewayID, sessionKey: nil)
+                }
+            }
+            for gatewayID in [firstID, secondID] {
+                #expect(GatewaySettingsStore.upsertGatewayRegistryEntry(.init(
+                    stableID: gatewayID,
+                    kind: .discovered,
+                    name: "Chat gateway",
+                    host: nil,
+                    port: nil,
+                    useTLS: true,
+                    lastConnectedAtMs: nil)))
+                GatewaySettingsStore.saveGatewayFocusedChatSession(stableID: gatewayID, sessionKey: "incident")
+            }
+            #expect(GatewaySettingsStore.removeGatewayRegistryEntry(stableID: firstID))
+            #expect(GatewaySettingsStore.loadGatewayFocusedChatSession(stableID: firstID) == nil)
+            #expect(GatewaySettingsStore.loadGatewayFocusedChatSession(stableID: secondID) == "incident")
+            GatewaySettingsStore.clearGatewayRegistry()
+            #expect(GatewaySettingsStore.loadGatewayFocusedChatSession(stableID: secondID) == nil)
+        }
+    }
+
     @Test func `operator fleet excludes focus and deduplicates background gateways`() {
         #expect(GatewayOperatorFleet.backgroundStableIDs(
             connectedStableIDs: ["alpha", "beta", "beta", "gamma"],
