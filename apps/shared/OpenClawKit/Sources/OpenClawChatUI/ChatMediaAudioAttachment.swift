@@ -40,7 +40,8 @@ struct ChatMediaAudioAttachment: View {
         .task(id: LoadIdentity(
             key: self.playbackKey,
             resolverReady: self.resolverReady,
-            retryGeneration: self.retryGeneration)) {
+            retryGeneration: self.retryGeneration))
+        {
             await self.loadAudio()
         }
     }
@@ -353,28 +354,31 @@ final class ChatMediaAudioPlayer: NSObject, ChatMediaPlayer {
         self.audioSessionObservers.append(center.addObserver(
             forName: AVAudioSession.interruptionNotification,
             object: session,
-            queue: .main) { [weak self] notification in
-                let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-                let options = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
-                Task { @MainActor [weak self] in
-                    guard let self, let type else { return }
-                    self.handleInterruption(type: type, options: options)
-                }
-            })
+            queue: .main)
+        { [weak self] notification in
+            let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let options = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            Task { @MainActor [weak self] in
+                guard let self, let type else { return }
+                self.handleInterruption(type: type, options: options)
+            }
+        })
         self.audioSessionObservers.append(center.addObserver(
             forName: AVAudioSession.routeChangeNotification,
             object: session,
-            queue: .main) { [weak self] notification in
-                let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
-                guard reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
-                Task { @MainActor [weak self] in self?.pause() }
-            })
+            queue: .main)
+        { [weak self] notification in
+            let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            guard reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
+            Task { @MainActor [weak self] in self?.pause() }
+        })
         self.audioSessionObservers.append(center.addObserver(
             forName: AVAudioSession.mediaServicesWereResetNotification,
             object: session,
-            queue: .main) { [weak self] _ in
-                Task { @MainActor [weak self] in self?.fail() }
-            })
+            queue: .main)
+        { [weak self] _ in
+            Task { @MainActor [weak self] in self?.fail() }
+        })
     }
 
     private func handleInterruption(type: UInt, options: UInt) {

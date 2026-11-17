@@ -962,7 +962,9 @@ extension RootTabs {
     private func applyInitialChatSessionIfNeeded() {
         guard !self.didApplyInitialChatSession else { return }
         self.didApplyInitialChatSession = true
-        self.appModel.focusChatSession(Self.initialChatSessionKey)
+        if let sessionKey = Self.initialChatSessionKey {
+            self.appModel.focusChatSession(sessionKey)
+        }
     }
 
     private func maybeShowQuickSetup() {

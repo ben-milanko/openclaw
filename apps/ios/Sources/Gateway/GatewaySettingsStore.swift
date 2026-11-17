@@ -41,6 +41,7 @@ enum GatewaySettingsStore {
 
     private static let instanceIdDefaultsKey = "node.instanceId"
     private static let selectedAgentDefaultsPrefix = "gateway.selectedAgentId."
+    private static let focusedChatSessionDefaultsPrefix = "gateway.focusedChatSession."
 
     private static let instanceIdAccount = "instanceId"
     private static let gatewayRegistryAccount = "gateway-registry"
@@ -437,7 +438,9 @@ enum GatewaySettingsStore {
         if GatewayStableIdentifier.matches(registry.activeStableID, stableID) {
             registry.activeStableID = nil
         }
-        return self.saveGatewayRegistry(registry)
+        guard self.saveGatewayRegistry(registry) else { return false }
+        self.saveGatewayFocusedChatSession(stableID: stableID, sessionKey: nil)
+        return true
     }
 
     static func activeGatewayEntry() -> GatewayRegistryEntry? {
@@ -649,6 +652,22 @@ enum GatewaySettingsStore {
         }
     }
 
+    static func loadGatewayFocusedChatSession(stableID: String) -> String? {
+        guard let component = GatewayStableIdentifier.storageComponent(stableID) else { return nil }
+        return UserDefaults.standard.string(forKey: self.focusedChatSessionDefaultsPrefix + component)
+    }
+
+    static func saveGatewayFocusedChatSession(stableID: String, sessionKey: String?) {
+        guard let component = GatewayStableIdentifier.storageComponent(stableID) else { return }
+        let key = self.focusedChatSessionDefaultsPrefix + component
+        let trimmed = sessionKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: key)
+        } else {
+            UserDefaults.standard.set(trimmed, forKey: key)
+        }
+    }
+
     private static func selectedAgentDefaultsKey(stableID: String) -> String {
         "\(self.selectedAgentDefaultsPrefix)v2.\(GatewayStableIdentifier.storageComponent(stableID)!)"
     }
@@ -815,10 +834,14 @@ extension GatewaySettingsStore {
     static let gatewayRegistryDidChange = Notification.Name("GatewaySettingsStore.gatewayRegistryDidChange")
 
     static func clearGatewayRegistry() {
+        let entries = self.loadGatewayRegistry().entries
         let registryRemoved = GenericPasswordKeychainStore.delete(
             service: self.gatewayService,
             account: self.gatewayRegistryAccount)
         if registryRemoved {
+            for entry in entries {
+                self.saveGatewayFocusedChatSession(stableID: entry.stableID, sessionKey: nil)
+            }
             NotificationCenter.default.post(name: self.gatewayRegistryDidChange, object: nil)
         }
         _ = GenericPasswordKeychainStore.delete(
