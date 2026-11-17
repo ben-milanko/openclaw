@@ -485,7 +485,7 @@ struct RootSidebar: View {
         let mainKey = self.resolvedMainSessionKey
         let isSelected = self.selectedDestination == .chat &&
             self.resolvedSelectedSessionKey.caseInsensitiveCompare(mainKey) == .orderedSame
-        let mainSession = self.mainSessionEntry
+        let mainSession = self.model.sessions.first { $0.key == mainKey }
         return HStack(spacing: 0) {
             Button {
                 self.appModel.openChat(sessionKey: mainKey)
@@ -552,12 +552,6 @@ struct RootSidebar: View {
         .padding(.bottom, 8)
         .fixedSize(horizontal: false, vertical: true)
         .background(OpenClawSidebarPalette.background)
-    }
-
-    /// Alias-aware main lookup: rosters may return namespaced keys
-    /// ("agent:<id>:main"), so raw comparison would drop Home's badges.
-    private var mainSessionEntry: OpenClawChatSessionEntry? {
-        self.model.sessions.first { $0.key == self.resolvedMainSessionKey }
     }
 
     private var resolvedMainSessionKey: String {
