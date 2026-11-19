@@ -1,4 +1,4 @@
-name: Ben Gateway package
+name: Ben Gateway preserved boundary checks
 
 on:
   push:
@@ -13,22 +13,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  package:
+  preserved-boundaries:
     if: github.repository == 'ben-milanko/openclaw'
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 45
     env:
       EXPECTED_SOURCE: f16ac416701def17fccb025f3fddf7fe802b1b78
       EXPECTED_TREE: ebd488aa150b05f1d5fbcd7bd95eccc44564184c
       PROTOCOL_SINCE_BASE_SHA: e13cf15ece9bbd969b7362927c315362c90c97ff
-      UPSTREAM_SOURCE: e13cf15ece9bbd969b7362927c315362c90c97ff
       GOMEMLIMIT: 4GiB
       GOMAXPROCS: "2"
       GOGC: "100"
       NODE_OPTIONS: --max-old-space-size=6144
-      OPENCLAW_DOCKER_PACKAGE_BUILD_TIMEOUT_MS: "5400000"
     steps:
-      # The PR changes this workflow; package bytes come only from the pinned stable backport.
       - name: Checkout pinned package source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -44,14 +41,14 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
           test "$(git rev-parse 'HEAD^{tree}')" = "$EXPECTED_TREE"
           test -z "$(git status --porcelain)"
-          mkdir "$RUNNER_TEMP/ben-package"
+          mkdir "$RUNNER_TEMP/ben-preserved-boundaries"
           python3 - <<'PYTHON'
           import json, os, shutil
           from pathlib import Path
           memory = dict(line.split(':', 1) for line in Path('/proc/meminfo').read_text().splitlines())
           available = int(memory['MemAvailable'].split()[0]) * 1024
           free = shutil.disk_usage(os.environ['RUNNER_TEMP']).free
-          Path(os.environ['RUNNER_TEMP'], 'ben-package', 'runner.json').write_text(json.dumps({
+          Path(os.environ['RUNNER_TEMP'], 'ben-preserved-boundaries', 'runner.json').write_text(json.dumps({
               'availableMemoryBytes': available, 'freeDiskBytes': free, 'cpuCount': os.cpu_count(),
           }, indent=2) + '\n')
           assert available >= 12 * 1024**3, 'Runner needs at least 12 GiB available RAM'
@@ -69,245 +66,33 @@ jobs:
       - name: Set up checksum-pinned test runtime
         uses: ./.github/actions/setup-test-bun
 
-      - name: Verify final source generator and formatter freeze
-        id: generate
-        shell: bash
-        run: |
-          set -euo pipefail
-          git cat-file -e "$UPSTREAM_SOURCE^{commit}"
-          pnpm config:channels:check
-          pnpm gateway:validators:check
-          pnpm ui:validators:check
-          pnpm static:validators:check
-          pnpm protocol:check
-          pnpm prompt:snapshots:check
-          python3 - <<'PYTHON'
-          import json, os, subprocess
-          from pathlib import Path
-          changed = subprocess.check_output(['git', 'diff', '--name-only', os.environ['UPSTREAM_SOURCE']], text=True).splitlines()
-          files = [name for name in changed if Path(name).is_file()]
-          subprocess.run(['pnpm', 'format:check', *files], check=True)
-          root = Path(os.environ['RUNNER_TEMP'], 'ben-package')
-          (root / 'changed-files.json').write_text(json.dumps(files, indent=2) + '\n')
-          PYTHON
-          test -z "$(git status --porcelain)"
-
-      - name: Focused custom boundary and owning sibling tests
-        id: tests
+      - name: Preserved upstream and adjacent boundary tests
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PYTHON'
           import json, os, subprocess
           from pathlib import Path
-          root = Path(os.environ['RUNNER_TEMP'], 'ben-package')
-          changed = subprocess.check_output(['git', 'diff', '--name-only', os.environ['UPSTREAM_SOURCE']], text=True).splitlines()
-          selected = {name for name in changed if name.endswith('.test.ts') and Path(name).is_file()}
-          selected.update(name for name in [
-              'src/plugins/registry.factory-bindings.test.ts',
-              'src/agents/tools/cron-tool.schema.test.ts',
-              'src/agents/tools/cron-tool-creator-cap.test.ts',
-              'src/agents/exec-tool-target-pinning.test.ts',
-              'src/infra/update-database-engine-admission.test.ts',
-              'src/cli/update-cli/update-command-package.test.ts',
-              'src/auto-reply/reply/agent-runner-result-accounting.test.ts',
-              'src/auto-reply/source-reply-delivery-mode.test.ts',
-              'src/agents/harness/host-capability.source-lifetime.test.ts',
-              'src/agents/harness/host-capability.node-authority.test.ts',
-              'src/agents/tools/message-tool.internal-source-reply.integration.test.ts',
-              'src/agents/tools/message-tool.local-source-reply.integration.test.ts',
-              'src/agents/tools/message-tool.source-reply.test.ts',
-              'extensions/codex/src/app-server/turn-params.test.ts',
-          ] if Path(name).is_file())
-          selected.update(str(name) for name in Path('src/gateway').glob('server.chat-goal*.test.ts'))
-          files = sorted(selected)
-          (root / 'selected-tests.json').write_text(json.dumps(files, indent=2) + '\n')
-          result = subprocess.run(['node', 'scripts/run-vitest.mjs', *files, '--maxWorkers=1'])
+          root = Path(os.environ['RUNNER_TEMP'], 'ben-preserved-boundaries')
+          tests = ['src/plugins/services.nodes.test.ts', 'src/process/spawn-broker/host-transport-retirement.test.ts', 'test/scripts/native-declaration-boundary.test.ts', 'test/scripts/tsdown-config.test.ts', 'test/scripts/tsdown-declaration-resolution.test.ts', 'src/config/sessions/goals-operation-policy.test.ts', 'src/agents/harness/host-capability.scheduled-targets.test.ts', 'src/agents/harness/host-capability.scheduled-projection.test.ts', 'src/agents/openclaw-tools.scheduled-targets.test.ts']
+          (root / 'selected-tests.json').write_text(json.dumps(tests, indent=2) + '\n')
+          result = subprocess.run(['node', 'scripts/run-vitest.mjs', *tests, '--maxWorkers=1'])
           (root / 'tests.exit').write_text(str(result.returncode) + '\n')
+          (root / 'proof.json').write_text(json.dumps({
+              'scope': 'Supplemental exact-source tests only; no package build, installation or activation',
+              'sourceCommit': os.environ['EXPECTED_SOURCE'], 'sourceTree': os.environ['EXPECTED_TREE'],
+              'originalTestExit': result.returncode, 'tests': tests,
+              'runId': os.environ['GITHUB_RUN_ID'], 'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
+          }, indent=2) + '\n')
           raise SystemExit(result.returncode)
           PYTHON
-
-      - name: Production type checks
-        id: types
-        shell: bash
-        run: |
-          set -euo pipefail
-          pnpm tsgo:prod
-
-      - name: Typed lint for exact changed source
-        id: lint
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PYTHON'
-          import os, subprocess
-          from pathlib import Path
-          changed = subprocess.check_output(['git', 'diff', '--name-only', os.environ['UPSTREAM_SOURCE']], text=True).splitlines()
-          groups = [
-              ('config/tsconfig/oxlint.core.json', ('src/', 'ui/', 'packages/')),
-              ('extensions/tsconfig.json', ('extensions/',)),
-          ]
-          failures = []
-          for config, prefixes in groups:
-              paths = [name for name in changed if name.startswith(prefixes) and name.endswith(('.ts', '.mts', '.mjs', '.tsx')) and Path(name).is_file()]
-              if paths:
-                  result = subprocess.run(['node', 'scripts/run-oxlint.mjs', '--type-aware', '--tsconfig', config, *paths])
-                  if result.returncode:
-                      failures.append((config, result.returncode))
-          raise SystemExit(1 if failures else 0)
-          PYTHON
-
-      - name: Verify canonical generator and formatter readback
-        id: readback
-        shell: bash
-        run: |
-          set -euo pipefail
-          pnpm config:channels:check
-          pnpm prompt:snapshots:check
-          python3 - <<'PYTHON'
-          import json, os, subprocess
-          from pathlib import Path
-          files = json.loads(Path(os.environ['RUNNER_TEMP'], 'ben-package', 'changed-files.json').read_text())
-          subprocess.run(['pnpm', 'format:check', *files], check=True)
-          PYTHON
-
-      - name: Build and check canonical package
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(node --version)" = v26.12.1
-          test "$(pnpm --version)" = 12.15.0
-          node scripts/package-openclaw-for-docker.mjs \
-            --output-dir "$RUNNER_TEMP/ben-package" \
-            --output-name openclaw-2026.11.5-ben-f16ac416.tgz \
-            2>&1 | tee "$RUNNER_TEMP/ben-package/build.log"
           test -z "$(git status --porcelain)"
 
-      - name: Verify packaged identity and retain digest
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PYTHON'
-          import hashlib, json, os, tarfile
-          from pathlib import Path
-          root = Path(os.environ['RUNNER_TEMP'], 'ben-package')
-          archive = root / 'openclaw-2026.11.5-ben-f16ac416.tgz'
-          with tarfile.open(archive) as package:
-              manifest = json.load(package.extractfile('package/package.json'))
-              build = json.load(package.extractfile('package/dist/build-info.json'))
-          assert manifest['version'] == build['version'] == '2026.11.5'
-          assert manifest['openclaw']['schemaVersions'] == {'state': 36, 'agent': 38}
-          assert build['commit'] == os.environ['EXPECTED_SOURCE']
-          assert isinstance(build.get('buildId'), str) and build['buildId']
-          with archive.open('rb') as stream:
-              digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-          (root / 'package-receipt.json').write_text(json.dumps({
-              'sourceCommit': os.environ['EXPECTED_SOURCE'], 'sourceTree': os.environ['EXPECTED_TREE'],
-              'archive': archive.name, 'sha256': digest, 'build': build,
-              'runId': os.environ['GITHUB_RUN_ID'], 'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
-              'scope': 'Candidate only; no deployment, release publication or external plugin activation',
-          }, indent=2) + '\n')
-          PYTHON
-
-      - name: Retain verified canonical archive independently of cache qualification
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: ben-gateway-2026.11.5-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/ben-package/openclaw-2026.11.5-ben-f16ac416.tgz
-            ${{ runner.temp }}/ben-package/package-receipt.json
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Freeze and prove credential-free offline runtime dependency cache
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PYTHON'
-          import hashlib, json, os, shutil, subprocess, tarfile, time
-          from pathlib import Path
-          root = Path(os.environ['RUNNER_TEMP'], 'ben-package')
-          archive = root / 'openclaw-2026.11.5-ben-f16ac416.tgz'
-          cache = root / 'npm-cache'
-          home = Path(os.environ['RUNNER_TEMP'], 'ben-cache-home')
-          home.mkdir(mode=0o700)
-          userconfig = home / 'empty.npmrc'
-          userconfig.write_text('')
-          userconfig.chmod(0o600)
-          env = {
-              'PATH': os.environ['PATH'], 'HOME': str(home), 'TMPDIR': os.environ['RUNNER_TEMP'],
-              'CI': 'true', 'npm_config_cache': str(cache), 'npm_config_userconfig': str(userconfig),
-              'npm_config_registry': 'https://registry.npmjs.org/', 'npm_config_globalconfig': '/dev/null',
-              'NODE_OPTIONS': '--max-old-space-size=6144',
-          }
-          npm = shutil.which('npm')
-          assert npm
-          version = subprocess.check_output([npm, '--version'], env=env, text=True).strip()
-          phases = []
-          for offline in [False, True]:
-              prefix = Path(os.environ['RUNNER_TEMP'], 'ben-offline-prefix' if offline else 'ben-cache-prefix')
-              command = [npm, 'install', '--global', '--prefix', str(prefix), str(archive), '--cache', str(cache), '--no-audit', '--no-fund']
-              if offline:
-                  command += ['--offline']
-                  command = ['sudo', '-n', 'unshare', '--net', '--setgid', str(os.getgid()), '--setuid', str(os.getuid()), '--',
-                      'env', '-i', *[name + '=' + value for name, value in env.items()], *command]
-              started = time.monotonic()
-              name = 'offline' if offline else 'registry-cache-fill'
-              with (root / (name + '.log')).open('w') as log:
-                  result = subprocess.run(command, env=env, stdout=log, stderr=subprocess.STDOUT)
-              phases.append({'phase': name, 'exit': result.returncode, 'elapsedSeconds': time.monotonic() - started, 'network': 'none' if offline else 'public npm registry; no credentials'})
-              (root / 'dependency-cache-phases.json').write_text(json.dumps(phases, indent=2) + '\n')
-              assert result.returncode == 0, name + ' failed; retain original log and numeric exit'
-              built = json.loads((prefix / 'lib/node_modules/openclaw/dist/build-info.json').read_text())
-              expected = json.loads((root / 'package-receipt.json').read_text())['build']
-              assert built == expected
-          cache_archive = root / 'offline-npm-cacache.tar'
-          subprocess.run(['tar', '-cf', str(cache_archive), '-C', str(cache), '_cacache'], check=True)
-          with cache_archive.open('rb') as stream:
-              digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-          package_receipt = json.loads((root / 'package-receipt.json').read_text())
-          with tarfile.open(cache_archive) as frozen_cache:
-              members = frozen_cache.getmembers()
-              assert all(item.name == '_cacache' or item.name.startswith('_cacache/') for item in members)
-              assert all(item.isfile() or item.isdir() for item in members)
-              unpacked = sum(item.size for item in members)
-          receipt = {
-              'schemaVersion': 1, 'status': 'qualified',
-              'scope': 'Public registry code/dependency cache only; no auth/user config/provider state/trust/grants. Managed update/recovery still untested.',
-              'candidate': {'version': '2026.11.5', 'sha256': package_receipt['sha256'], 'commit': os.environ['EXPECTED_SOURCE'], 'buildId': package_receipt['build']['buildId']},
-              'cache': {'sha256': digest, 'archiveBytes': cache_archive.stat().st_size, 'unpackedBytes': unpacked, 'root': '_cacache'},
-              'producer': {'freshHome': True, 'emptyNpmrc': True, 'allowlistedEnv': True, 'publicRegistry': 'https://registry.npmjs.org/',
-                  'installExit': phases[0]['exit'], 'offlineInstallExit': phases[1]['exit'], 'offlineNetworkIsolation': 'sudo-unshare-net', 'cacheOnly': True},
-              'sourceTree': os.environ['EXPECTED_TREE'], 'npmVersion': version, 'phases': phases,
-              'runId': os.environ['GITHUB_RUN_ID'], 'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
-          }
-          (root / 'offline-cache-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
-          PYTHON
-          test -z "$(git status --porcelain)"
-
-      - name: Retain qualified code-only offline cache
+      - name: Retain preserved-boundary proof and diagnostics
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: ben-gateway-115-offline-cache-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/ben-package/offline-npm-cacache.tar
-            ${{ runner.temp }}/ben-package/offline-cache-receipt.json
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Retain build diagnostics
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: ben-gateway-build-log-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/ben-package/build.log
-            ${{ runner.temp }}/ben-package/runner.json
-            ${{ runner.temp }}/ben-package/changed-files.json
-            ${{ runner.temp }}/ben-package/selected-tests.json
-            ${{ runner.temp }}/ben-package/tests.exit
-            ${{ runner.temp }}/ben-package/dependency-cache-phases.json
-            ${{ runner.temp }}/ben-package/registry-cache-fill.log
-            ${{ runner.temp }}/ben-package/offline.log
+          name: ben-gateway-preserved-boundaries-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ben-preserved-boundaries/
           if-no-files-found: ignore
           retention-days: 14
