@@ -17,6 +17,8 @@ type SignalToolResultMocks = {
   waitForTransportReadyMock: MockFn;
   enqueueSystemEventMock: MockFn;
   sendMock: MockFn;
+  sendTypingMock: MockFn;
+  sendReadReceiptMock: MockFn;
   replyMock: MockFn;
   updateLastRouteMock: MockFn;
   readAllowFromStoreMock: MockFn;
@@ -31,6 +33,8 @@ const signalToolResultMocks: SignalToolResultMocks = vi.hoisted(() => ({
   waitForTransportReadyMock: vi.fn(),
   enqueueSystemEventMock: vi.fn(),
   sendMock: vi.fn(),
+  sendTypingMock: vi.fn(),
+  sendReadReceiptMock: vi.fn(),
   replyMock: vi.fn(),
   updateLastRouteMock: vi.fn(),
   readAllowFromStoreMock: vi.fn(),
@@ -46,6 +50,8 @@ const {
   waitForTransportReadyMock,
   enqueueSystemEventMock,
   sendMock,
+  sendTypingMock,
+  sendReadReceiptMock,
   replyMock,
   updateLastRouteMock,
   readAllowFromStoreMock,
@@ -233,8 +239,8 @@ vi.mock("openclaw/plugin-sdk/channel-inbound", async () => {
 vi.mock("./send.js", async () => ({
   ...(await vi.importActual<typeof import("./send.js")>("./send.js")),
   sendMessageSignal: sendMock,
-  sendTypingSignal: vi.fn().mockResolvedValue(true),
-  sendReadReceiptSignal: vi.fn().mockResolvedValue(true),
+  sendTypingSignal: sendTypingMock,
+  sendReadReceiptSignal: sendReadReceiptMock,
 }));
 
 vi.mock("openclaw/plugin-sdk/conversation-runtime", async () => ({
@@ -367,6 +373,8 @@ export function installSignalToolResultTestHooks() {
       mock.mockReset();
     }
     sendMock.mockResolvedValue(undefined);
+    sendTypingMock.mockResolvedValue(true);
+    sendReadReceiptMock.mockResolvedValue(true);
     signalCheckMock.mockResolvedValue({ ok: true });
     signalRpcRequestMock.mockResolvedValue({});
     assertSignalDaemonEndpointAvailableMock.mockResolvedValue(undefined);

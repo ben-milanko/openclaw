@@ -32,6 +32,8 @@ type GitHubGraphQLUnavailableError = ControlUiGitHubError;
 export type ControlUiGitHubPreviewIdentity = {
   token: string | undefined;
   cacheScope: string;
+  /** Granted only by the host for a live administrator connection. */
+  allowPrivateRepositories?: true;
   /** Host service/env credentials may retry a stale HTTP 401 anonymously. */
   optionalAuth?: true;
   stale?: true;
@@ -75,6 +77,10 @@ type GitHubReadRequest = { assertActive: () => void; signal: AbortSignal };
 
 /** Host consumers depend on this public read contract, not the plugin's source graph. */
 type GitHubPublicApi = {
+  resolveControlUiGitHubReadIdentity: (
+    identity?: ControlUiGitHubPreviewIdentity,
+    assertPrivateAccess?: () => void,
+  ) => ControlUiGitHubPreviewIdentity;
   resolveGitHubApiUrls: (apiBaseUrl: string | undefined) => { baseUrl: string; graphqlUrl: string };
   GITHUB_API_ORIGIN: string;
   GITHUB_API_BASE_URL: string;
@@ -240,7 +246,7 @@ export function hasConfiguredGitHubApiCredential(
 
 type GitHubTransportApi = Omit<
   GitHubPublicApi,
-  "resolveGitHubApiCredentialScope" | "loadGitHubDetail"
+  "resolveGitHubApiCredentialScope" | "resolveControlUiGitHubReadIdentity" | "loadGitHubDetail"
 > & {
   loadGitHubDetail: (
     target: GitHubReadTarget,
@@ -283,7 +289,7 @@ export const gitHubPublicApi = createLazyFacadeObjectValue<GitHubPublicApi>(() =
     resolveConfiguredGitHubHost(getRuntimeConfigSnapshot()) === "github.com"
       ? resolveScope()
       : { token: undefined, apiScope: "public" };
-  const resolveReadIdentity = (
+  const selectReadIdentity = (
     identity: ControlUiGitHubPreviewIdentity | undefined,
   ): ControlUiGitHubPreviewIdentity => {
     if (identity) {
@@ -304,6 +310,28 @@ export const gitHubPublicApi = createLazyFacadeObjectValue<GitHubPublicApi>(() =
       optionalAuth: true,
       assertSelected,
       revalidate: async () => assertSelected(),
+    };
+  };
+  const resolveReadIdentity = (
+    identity?: ControlUiGitHubPreviewIdentity,
+    assertPrivateAccess?: () => void,
+  ): ControlUiGitHubPreviewIdentity => {
+    const selected = selectReadIdentity(identity);
+    if (!assertPrivateAccess) {
+      return selected;
+    }
+    const assertSelected = () => {
+      selected.assertSelected();
+      assertPrivateAccess();
+    };
+    return {
+      ...selected,
+      allowPrivateRepositories: true,
+      assertSelected,
+      revalidate: async () => {
+        await selected.revalidate();
+        assertSelected();
+      },
     };
   };
   const resolveReadRequestIdentity = (
@@ -330,6 +358,7 @@ export const gitHubPublicApi = createLazyFacadeObjectValue<GitHubPublicApi>(() =
   };
   return {
     ...library,
+    resolveControlUiGitHubReadIdentity: resolveReadIdentity,
     get GITHUB_API_BASE_URL() {
       return resolveConfiguredGitHubApiBaseUrl(getRuntimeConfigSnapshot());
     },

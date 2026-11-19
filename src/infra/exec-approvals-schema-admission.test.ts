@@ -1,7 +1,10 @@
+import fs from "node:fs";
+import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { prepareExecutionIdentityContextAtAdmission } from "../audit/execution-identity.test-support.js";
 import { insertOperatorApproval } from "../gateway/operator-approval-store.js";
+import { createProcessSupervisor } from "../process/supervisor/supervisor.js";
 import { listAgentProvenance } from "../state/agent-provenance.js";
 import * as state from "../state/openclaw-state-db.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
@@ -131,5 +134,54 @@ it.each<Surface>(["roster", "profiles", "approval binding", "message progress", 
     await useFeature(surface, env, "after-authorization");
     expect(source.db.prepare("PRAGMA schema_version").get()).toEqual(before);
     expect(assertCurrent).not.toThrow();
+  },
+);
+
+it.skipIf(process.platform === "win32")(
+  "launches once and joins cleanup after concurrent feature admission",
+  async () => {
+    const root = tempDirs.make("openclaw-exec-concurrent-feature-");
+    const env = { OPENCLAW_STATE_DIR: root };
+    vi.stubEnv("OPENCLAW_STATE_DIR", root);
+    writeExecApprovalsConfigRow({
+      db: state.openOpenClawStateDatabase({ env }).db,
+      file: { version: 1, defaults: { security: "allowlist", ask: "on-miss" } },
+    });
+    const assertCurrent = await commitExecAuthorizationLocked(currentPolicyExec("printf synthetic"));
+    // A different workflow uses this shared store while the command is prepared.
+    await useFeature("profiles", env, "concurrent-launch-preparation");
+    const marker = path.join(root, "executed.txt");
+    const supervisor = createProcessSupervisor();
+    const scopeKey = `integrity-${path.basename(root)}`;
+    const closeScope = supervisor.acquireScopeCleanup(scopeKey, { processTree: "required-all" });
+    let initiations = 0;
+    try {
+      const run = await supervisor.spawn({
+        mode: "child",
+        scopeKey,
+        argv: [
+          process.execPath,
+          "-e",
+          "require('node:fs').appendFileSync(process.argv[1], 'once\\n')",
+          marker,
+        ],
+        cwd: root,
+        stdinMode: "pipe-closed",
+        timeoutMs: 10_000,
+        initiateSpawn(launch) {
+          assertCurrent();
+          initiations += 1;
+          return launch();
+        },
+      });
+      expect(await run.wait()).toMatchObject({ reason: "exit", exitCode: 0 });
+      await closeScope();
+      expect(initiations).toBe(1);
+      expect(fs.readFileSync(marker, "utf8")).toBe("once\n");
+    } finally {
+      supervisor.cancelScope(scopeKey);
+      await closeScope();
+      await supervisor.shutdown();
+    }
   },
 );

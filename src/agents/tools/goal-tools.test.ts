@@ -97,12 +97,14 @@ describe("goal tools", () => {
       const tool = createCreateGoalTool(options);
       const args = {
         objective: "ship work",
+        max_continuation_turns: 3,
         ...(budget === undefined ? {} : { token_budget: budget }),
       };
       expect(Value.Check(tool.parameters, args)).toBe(true);
       await tool.execute("call-1", args);
       expect(readGoal()).toMatchObject({
         objective: "ship work",
+        maxContinuationTurns: 3,
         ...(budget === undefined ? {} : { tokenBudget: budget }),
       });
       expect(readGoal(otherAgent)).toBeUndefined();

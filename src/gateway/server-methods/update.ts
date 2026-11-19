@@ -74,6 +74,7 @@ import { parseRestartRequestParams } from "./restart-request.js";
 import type { GatewayRequestHandlers } from "./types.js";
 import {
   admitGatewayUpdateRequest,
+  checkUpdateTarget,
   retainUpdateRequesterAuthority,
   createUnexpectedUpdateFailureResult,
   recordHandoffFailure,
@@ -97,6 +98,7 @@ export const updateHandlers: GatewayRequestHandlers = {
     if (!params) {
       return;
     }
+    const packageTarget = params.target?.kind === "package" ? params.target : undefined;
     const actor = resolveControlPlaneActor(client);
     const {
       sessionKey: rawSessionKey,
@@ -183,7 +185,12 @@ export const updateHandlers: GatewayRequestHandlers = {
       trigger,
       origin,
       before: { version: VERSION },
-      ...(params.target ? { target: { kind: "git", sha: params.target.upstreamSha } } : {}),
+      target:
+        params.target?.kind === "git"
+          ? { kind: "git", sha: params.target.upstreamSha }
+          : packageTarget
+            ? { kind: "package", version: packageTarget.version }
+            : undefined,
     });
     const runId = run.runId;
     const warn = (message: string) => context?.logGateway?.warn(message);
@@ -279,7 +286,8 @@ export const updateHandlers: GatewayRequestHandlers = {
     };
     try {
       const configChannel = normalizeUpdateChannel(config.update?.channel);
-      const { status, installSurface } = await resolveGatewayUpdateAdmission(runId, timeoutMs);
+      const admission = await resolveGatewayUpdateAdmission(runId, timeoutMs);
+      const { status, installSurface } = admission;
       const installRoot = installSurface.root;
       result.mode = installSurface.mode;
       result.root = installRoot;
@@ -306,18 +314,12 @@ export const updateHandlers: GatewayRequestHandlers = {
         installKind: status.installKind,
         git: status.git,
       }).channel;
-      const explicitDevTarget = params.target
-        ? devUpdateTargetFromGitTarget(params.target)
-        : undefined;
-      let targetFailureReason =
-        explicitDevTarget && (installSurface.kind !== "git" || effectiveChannel !== "dev")
-          ? "unsupported-update-target"
-          : explicitDevTarget && explicitDevTarget.upstreamRef !== status.git?.upstream
-            ? "update-target-upstream-mismatch"
-            : undefined;
+      const explicitDevTarget =
+        params.target?.kind === "git" ? devUpdateTargetFromGitTarget(params.target) : undefined;
+      let targetFailureReason = checkUpdateTarget(params.target, admission, effectiveChannel);
       const adoption = targetFailureReason
         ? undefined
-        : updateLifecycle.campaign?.adopt(explicitDevTarget);
+        : updateLifecycle.campaign?.adopt(packageTarget ?? explicitDevTarget);
       if (adoption?.status === "mismatch") {
         targetFailureReason = "update-target-campaign-mismatch";
       } else if (adoption?.status === "applying") {
@@ -335,6 +337,7 @@ export const updateHandlers: GatewayRequestHandlers = {
           ? adoptedCampaign.target.version.trim() || undefined
           : undefined;
       const devTarget = explicitDevTarget ?? adoptedDevTarget;
+      const packageVersion = packageTarget?.version ?? adoptedPackageTargetVersion;
       await recordUpdateRunPhase(runId, "requested", {
         ...(adoptedCampaign
           ? { trigger: "campaign", origin: { campaignId: adoptedCampaign.campaignId } }
@@ -343,7 +346,7 @@ export const updateHandlers: GatewayRequestHandlers = {
           channel: effectiveChannel,
           kind: installSurface.kind === "git" ? "git" : "package",
           ...(devTarget ? { sha: devTarget.upstreamSha } : {}),
-          ...(adoptedPackageTargetVersion ? { version: adoptedPackageTargetVersion } : {}),
+          ...(packageVersion ? { version: packageVersion } : {}),
         },
       });
       if (adoptedCampaign) {
@@ -355,14 +358,14 @@ export const updateHandlers: GatewayRequestHandlers = {
       }
       sentinelMeta.target = devTarget
         ? `${devTarget.upstreamRef}@${devTarget.upstreamSha}`
-        : adoptedPackageTargetVersion
-          ? `version ${adoptedPackageTargetVersion}`
+        : packageVersion
+          ? `version ${packageVersion}${packageTarget ? ` build ${packageTarget.buildId}` : ""}`
           : `${effectiveChannel} channel`;
       const acknowledgeUpdate = async (beforeVersion: string | null) => {
         if (await refuseUnauthorizedChatUpdate()) {
           return false;
         }
-        const targetVersion = adoptedPackageTargetVersion ?? getUpdateAvailable()?.latestVersion;
+        const targetVersion = packageVersion ?? getUpdateAvailable()?.latestVersion;
         const acknowledgedRun = await recordUpdateRunPhase(runId, "requested", {
           before: { version: beforeVersion ?? VERSION },
           ...(targetVersion ? { target: { version: targetVersion } } : {}),
@@ -521,8 +524,9 @@ export const updateHandlers: GatewayRequestHandlers = {
             timeoutMs,
             restartDrainTimeoutMs: resolveGatewayRestartDeferralTimeoutMs(),
             restartDelayMs: requestedRestartDelayMs === undefined ? 0 : restartDelayMs,
-            ...(handoffChannel ? { channel: handoffChannel } : {}),
-            ...(adoptedPackageTargetVersion ? { tag: adoptedPackageTargetVersion } : {}),
+            ...(packageTarget
+              ? { packageTarget }
+              : { channel: handoffChannel, tag: adoptedPackageTargetVersion }),
             ...(devTarget ? { devTarget } : {}),
             meta: sentinelMeta,
             handoffId,

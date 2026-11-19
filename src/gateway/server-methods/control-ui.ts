@@ -26,7 +26,10 @@ import {
   type ControlUiGitHubPreviewIdentity,
   type ControlUiGitHubSessionIdentity,
 } from "../github-public-api.js";
-import { prepareGitHubReaderIdentity } from "../github-reader-identity.js";
+import {
+  GitHubReadRequestInactiveError,
+  prepareControlUiGitHubIdentity,
+} from "../control-ui-github-identity.js";
 import { operatorSessionCap } from "../operator-role-policy.js";
 import { resolveRequestedSessionAgentId as resolveRequestedGlobalAgentId } from "../session-request-agent.js";
 import { withReadySessionRows } from "../session-row-prepared-read.js";
@@ -38,34 +41,8 @@ import { respondError } from "./response.js";
 import type {
   GatewayClient,
   GatewayRequestContext,
-  GatewayRequestHandlerOptions,
   GatewayRequestHandlers,
 } from "./types.js";
-
-class GitHubReadRequestInactiveError extends Error {
-  constructor() {
-    super("GitHub request is no longer active. Try again.");
-  }
-}
-
-async function prepareControlUiGitHubIdentity(
-  { context, client, signal, hasCurrentClientAuthority }: GatewayRequestHandlerOptions,
-  agentId: string,
-) {
-  // Nested plugin requests may decorate the client; transport authority retains its owner.
-  const assertActive = () => {
-    if (
-      signal?.aborted ||
-      (hasCurrentClientAuthority
-        ? !hasCurrentClientAuthority()
-        : client?.connId &&
-          !context.getClientConnIds?.((current) => current === client).has(client.connId))
-    ) {
-      throw new GitHubReadRequestInactiveError();
-    }
-  };
-  return prepareGitHubReaderIdentity(context, agentId, assertActive);
-}
 
 function createGitHubReadHandler<
   T extends NonNullable<ReturnType<typeof gitHubPublicApi.parseGitHubTarget>>,

@@ -512,10 +512,8 @@ export async function accountFollowupTurn(params: {
     });
     return undefined;
   }
-  if (turn.queued.goalContinuation) {
-    // Queue settlement, not enqueue or native provider subruns, counts one automatic turn.
-    completion?.patch({ kind: "goal-continuation", goalId: turn.queued.goalContinuation.goalId });
-  }
+  // Automatic Goal turns have already claimed their lifetime slot in preparation.
+  // Completion owns usage/delivery accounting, not a second continuation increment.
   const resolvedVerboseLevel =
     normalizeVerboseLevel(
       turn.queued.run.verboseLevelOverride ??

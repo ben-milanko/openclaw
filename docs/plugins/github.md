@@ -10,7 +10,7 @@ read_when:
 
 # GitHub
 
-The bundled GitHub plugin adds public-repository link previews and a read-only
+The bundled GitHub plugin adds GitHub link previews and a read-only
 reader to the [Control UI](/web/control-ui), plus the `github_read` and `github_search` agent tools. It is separate from the
 [GitHub Copilot model provider](/providers/github-copilot).
 
@@ -31,8 +31,10 @@ To intentionally keep it off and silence that notice, set
 
 ## Read an item beside chat
 
-The plugin is enabled by default. Connect to the Gateway, then click a public
-GitHub issue, pull request, or commit link in chat. The reader opens beside the
+The plugin is enabled by default. Connect to the Gateway, then click a supported
+GitHub issue, pull request, or commit link in chat. Gateway administrators can also
+read private repositories accessible to the selected GitHub credential. Other
+viewers can read only public repositories. The reader opens beside the
 conversation with a GitHub icon and an **Open on GitHub** link. Hover or focus
 an issue, pull request, or commit link to see its preview. Issue and pull request chips
 show the full `owner/repo#number` reference, including shorthand references
@@ -169,13 +171,15 @@ hovercard, and GitHub links open externally.
 
 ## Limits and unavailable content
 
-- The reader is public-only and read-only. Use **Open on GitHub** for private
-  repositories, posting comments, or merging pull requests.
+- The reader is read-only. Private repositories require an authenticated Gateway
+  administrator connection and a GitHub credential with repository access.
+  Other viewers remain public-only, including when an administrator has already
+  cached the item. Use **Open on GitHub** to post comments or merge pull requests.
 - Previews and reader documents use the selected agent’s managed GitHub identity,
   or the configured Control UI GitHub token and Gateway environment fallback when
   no managed identity is selected. Without credentials they use GitHub’s shared
-  anonymous IP quota. Authenticated documents remain public-only: the reader checks
-  repository visibility and identity before returning fresh or cached content.
+  anonymous IP quota. The reader checks repository access and the current
+  connection's authority before returning fresh or cached content.
   Identity changes abort stale requests. Attachment images remain anonymous.
 - Each comment collection is limited to 20 entries; PR discussion and inline
   review comments have separate limits. Up to 30 changed files are shown.
@@ -232,5 +236,6 @@ Private previews finish under that request's authority. Their UI cache is scoped
 to the connection, agent, and session; document caches also include the host,
 repository, and prepared reader identity. Access denial stays an error, rather than
 falling back to anonymous page metadata. Repository redirects require reopening
-an updated session target. Public `github.preview`, `github_read`, and
-`github_search` retain their public-repository contracts.
+an updated session target. The agent `github_read` and `github_search` tools
+retain their public-repository contracts; the generic Control UI reader permits
+private GitHub.com repositories only under the administrator access described above.

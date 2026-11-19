@@ -81,11 +81,17 @@ describe("session goals", () => {
   });
 
   it("resumes budget-limited goals with a fresh budget window", async () => {
-    await startGoal(100, { objective: "finish task", tokenBudget: 20 });
-    await patchEntry({ totalTokens: 125 });
+    const created = await startGoal(100, {
+      objective: "finish task",
+      tokenBudget: 20,
+      maxContinuationTurns: 3,
+    });
+    await patchEntry({ totalTokens: 125, goal: { ...created, continuationTurns: 1 } });
     await snapshot(20);
     const resumed = await setStatus("active", 30);
     expect(resumed).toMatchObject({ status: "active", tokenStart: 125, tokensUsed: 0 });
+    expect(resumed.maxContinuationTurns).toBe(3);
+    expect(resumed.continuationTurns).toBe(1);
     expect(resumed.budgetLimitedAt).toBeUndefined();
     expect((await snapshot(40)).goal).toMatchObject({ status: "active", tokensUsed: 0 });
   });

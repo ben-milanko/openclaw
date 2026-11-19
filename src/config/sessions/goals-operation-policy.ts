@@ -52,6 +52,10 @@ export function operationFingerprint(operation: SessionGoalOperation): string {
       "note" in operation ? operation.note : null,
       ...(operation.action === "resume" && operation.preserveBudget ? ["preserve-budget"] : []),
       ...(operation.action === "replace" ? [operation.expectedRunId] : []),
+      // Preserve existing receipt hashes for operations that did not request a bound.
+      ...("maxContinuationTurns" in operation && operation.maxContinuationTurns !== undefined
+        ? [operation.maxContinuationTurns]
+        : []),
     ]),
   );
 }

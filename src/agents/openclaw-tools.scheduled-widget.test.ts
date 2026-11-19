@@ -29,6 +29,53 @@ function expectPinnedOnlySchema(tools: ReturnType<typeof createOpenClawTools>): 
   });
 }
 
+it("keeps durable WebChat follow-ups pinned-only without borrowing client capabilities", async () => {
+  const put = vi.spyOn(gateway, "callInProcessGatewayTool").mockResolvedValue({
+    resolvedWidgetName: "followup-status",
+    widgets: [{ name: "followup-status", tabId: "main", grantState: "none" }],
+  });
+  const tools = createOpenClawCodingTools({
+    sessionKey: "agent:main:dashboard:owner",
+    messageProvider: "webchat",
+    inputProvenance: {
+      kind: "inter_session",
+      sourceSessionKey: "agent:main:dashboard:requester",
+      sourceTool: "sessions_send",
+    },
+    toolConstructionPlan: createOpenClawOnlyToolConstructionPlan(),
+  });
+  expectPinnedOnlySchema(tools);
+  const tool = widget(tools)!;
+  await expect(
+    tool.execute("followup-inline", {
+      title: "Status",
+      widget_code: "<p>ready</p>",
+    }),
+  ).rejects.toThrow("pin=true is required for this pinned-only widget surface");
+  const result = await tool.execute("followup-pinned", {
+    title: "Status",
+    widget_code: "<p>ready</p>",
+    name: "followup-status",
+    pin: true,
+  });
+  expect(put).toHaveBeenCalledExactlyOnceWith(
+    "board.widget.put",
+    expect.objectContaining({
+      sessionKey: "agent:main:dashboard:owner",
+      name: "followup-status",
+      content: { kind: "html", html: "<p>ready</p>" },
+    }),
+  );
+  expect(result.details).toMatchObject({ status: "pinned", boardWidgetName: "followup-status" });
+});
+
+it.each([undefined, "agent:main:cron:job:run:detached"])(
+  "does not offer capless WebChat authoring without a durable owner (%s)",
+  (agentSessionKey) => {
+    expect(createWidget({ agentSessionKey, agentChannel: "webchat" })).toBeUndefined();
+  },
+);
+
 it.each([undefined, "agent:main:cron:job:run:detached"])(
   "requires a persistent session for recovered authoring (%s)",
   (agentSessionKey) => {
@@ -36,19 +83,22 @@ it.each([undefined, "agent:main:cron:job:run:detached"])(
   },
 );
 
-it("applies tool policy to recovered dashboard authoring", () => {
-  const options = {
-    sessionKey: "agent:main:dashboard:recovered",
-    pinnedWidgetAuthoring: true,
-    toolConstructionPlan: createOpenClawOnlyToolConstructionPlan(),
-  };
-  expectPinnedOnlySchema(createOpenClawCodingTools(options));
-  const deniedTools = createOpenClawCodingTools({
-    ...options,
-    config: { tools: { deny: ["show_widget"] } },
-  });
-  expect(widget(deniedTools)).toBeUndefined();
-});
+it.each([{ pinnedWidgetAuthoring: true }, { messageProvider: "webchat" }])(
+  "applies tool policy to pinned dashboard authoring (%j)",
+  (surface) => {
+    const options = {
+      sessionKey: "agent:main:dashboard:recovered",
+      ...surface,
+      toolConstructionPlan: createOpenClawOnlyToolConstructionPlan(),
+    };
+    expectPinnedOnlySchema(createOpenClawCodingTools(options));
+    const deniedTools = createOpenClawCodingTools({
+      ...options,
+      config: { tools: { deny: ["show_widget"] } },
+    });
+    expect(widget(deniedTools)).toBeUndefined();
+  },
+);
 
 it.each([
   {},
@@ -60,6 +110,7 @@ it.each([
   expect(
     createWidget({
       agentSessionKey: "agent:main:dashboard:scheduled",
+      agentChannel: "webchat",
       gatewayCallerScheduled: true,
       ...options,
     }),

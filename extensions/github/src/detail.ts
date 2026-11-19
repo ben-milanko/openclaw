@@ -19,8 +19,8 @@ import {
 } from "./github-api.js";
 import type { ControlUiGitHubPreviewIdentity } from "./preview-contract.js";
 import {
-  assertPublicGitHubRepository,
-  isPublicGitHubRepository,
+  assertReadableGitHubRepository,
+  isReadableGitHubRepository,
   parseControlUiGitHubPreviewResponse,
 } from "./preview.js";
 import {
@@ -72,7 +72,7 @@ type ReadDetailPage = Parameters<typeof fetchPullChecks>[3];
 
 class GitHubDetailAccessError extends ControlUiGitHubError {
   constructor() {
-    super(404, "GitHub repository is not public or has changed");
+    super(404, "GitHub repository is unavailable or has changed");
   }
 }
 
@@ -86,7 +86,7 @@ function redirectedRepositoryUrl(url: URL, suffix: string): string {
   return GITHUB_API_ORIGIN + match[1];
 }
 
-async function readPublicRepository(
+async function readRepositoryIdentity(
   url: string,
   fetchImpl: typeof fetch,
   identity: ControlUiGitHubPreviewIdentity | undefined,
@@ -101,7 +101,10 @@ async function readPublicRepository(
   });
   const id = isRecord(repository) ? optionalNumber(repository, "id") : undefined;
   if (
-    !isPublicGitHubRepository(repository) ||
+    !isReadableGitHubRepository(
+      repository,
+      Boolean(identity?.token && identity.allowPrivateRepositories),
+    ) ||
     id === undefined ||
     !Number.isSafeInteger(id) ||
     id <= 0 ||
@@ -283,12 +286,12 @@ async function loadGitHubDetailWithIdentity(
   await identity?.revalidate();
   identity?.assertSelected();
   const id = parsed.kind === "commit" ? parsed.sha : parsed.number;
-  const sourceKey = `${apiBaseUrl}\0${parsed.kind}:${parsed.owner.toLowerCase()}/${parsed.repo.toLowerCase()}#${id}\0${identity?.cacheScope ?? "anonymous"}\0${githubApiCredentialCacheScope(identity?.token)}\0`;
+  const sourceKey = `${apiBaseUrl}\0${parsed.kind}:${parsed.owner.toLowerCase()}/${parsed.repo.toLowerCase()}#${id}\0${identity?.cacheScope ?? "anonymous"}\0${githubApiCredentialCacheScope(identity?.token)}\0${identity?.allowPrivateRepositories === true ? "private" : "public"}\0`;
   const key = sourceKey + (section ?? "complete");
   const assertDelivery = async (result: CachedDocument) => {
     if (identity?.token && !session) {
       for (const url of result.repositoryUrls) {
-        await readPublicRepository(url, fetchImpl, identity, result.repositoryId);
+        await readRepositoryIdentity(url, fetchImpl, identity, result.repositoryId);
       }
     }
     await identity?.revalidate();
@@ -324,10 +327,10 @@ async function loadGitHubDetailWithIdentity(
     const repositoryId = session
       ? await readSessionGitHubRepository(session, fetchImpl)
       : identity?.token
-        ? await readPublicRepository(repositoryUrl, fetchImpl, identity, source?.repositoryId)
+        ? await readRepositoryIdentity(repositoryUrl, fetchImpl, identity, source?.repositoryId)
         : undefined;
     if (!identity?.token) {
-      await assertPublicGitHubRepository(repositoryUrl, fetchImpl, undefined, identity);
+      await assertReadableGitHubRepository(repositoryUrl, fetchImpl, undefined, identity);
     }
     const readPage: ReadDetailPage = async (url) => {
       const suffix = new URL(url).pathname.slice(new URL(repositoryUrl).pathname.length);
@@ -337,7 +340,7 @@ async function loadGitHubDetailWithIdentity(
           : identity?.token
             ? async (redirect) => {
                 const redirected = redirectedRepositoryUrl(redirect, suffix);
-                await readPublicRepository(redirected, fetchImpl, identity, repositoryId);
+                await readRepositoryIdentity(redirected, fetchImpl, identity, repositoryId);
                 repositoryUrls.add(redirected);
               }
             : undefined,
@@ -522,7 +525,7 @@ async function loadGitHubDetailWithIdentity(
       }
     }
     const result = { document, itemPage, repositoryId, repositoryUrls: [...repositoryUrls] };
-    // Public-only delivery is checked after all awaited content reads, including
+    // Repository access is checked after all awaited content reads, including
     // optional comments/files; a failed authority check cannot become partial data.
     await assertDelivery(result);
     return result;
@@ -589,7 +592,7 @@ export function loadGitHubDetail(
     const load = async (selected: ControlUiGitHubPreviewIdentity | undefined) => {
       const { loadGitHubJobLog } = await import("./job-logs.js");
       return loadGitHubJobLog(target, selected, fetchImpl, async (expectedId) =>
-        readPublicRepository(
+        readRepositoryIdentity(
           `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}`,
           fetchImpl,
           selected,

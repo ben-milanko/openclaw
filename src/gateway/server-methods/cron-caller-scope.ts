@@ -286,7 +286,7 @@ export function readCronCallerScope(
     currentJobId,
     manageAll,
     ...(toolsAllowProvenance ? { toolsAllowProvenance } : {}),
-    ...(surfaceProvenance && identity.cronExecToolTarget?.host === "gateway"
+    ...(identity.cronExecToolTarget?.host === "gateway"
       ? {
           toolsAllowExecTarget: {
             version: 1 as const,

@@ -63,27 +63,65 @@ const avatarCaches = new WeakMap<
 
 export const parseControlUiGitHubPreviewTarget = parseGitHubTarget;
 
-export function isPublicGitHubRepository(value: unknown): value is Record<string, unknown> {
-  return isRecord(value) && value.private === false && value.visibility === "public";
+export function isReadableGitHubRepository(
+  value: unknown,
+  allowPrivate = false,
+): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    ((value.private === false && value.visibility === "public") ||
+      (allowPrivate &&
+        value.private === true &&
+        (value.visibility === "private" || value.visibility === "internal")))
+  );
 }
 
-export async function assertPublicGitHubRepository(
+async function assertRepositoryAccess(
+  repositoryUrl: string,
+  fetchImpl: typeof fetch,
+  token: string | undefined,
+  identity: ControlUiGitHubPreviewIdentity | undefined,
+  signal: AbortSignal | undefined,
+  allowPrivate: boolean,
+): Promise<Record<string, unknown>> {
+  // Stop before item reads; shared credentials alone do not grant private access.
+  const { value: repository } = await fetchGitHubJsonPage(repositoryUrl, fetchImpl, token, {
+    identity,
+    signal,
+    apiBaseUrl: GITHUB_API_ORIGIN,
+  });
+  if (!isReadableGitHubRepository(repository, allowPrivate)) {
+    throw new ControlUiGitHubError(404, "GitHub repository is unavailable");
+  }
+  return repository;
+}
+
+export function assertReadableGitHubRepository(
   repositoryUrl: string,
   fetchImpl: typeof fetch,
   token?: string,
   identity?: ControlUiGitHubPreviewIdentity,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
-  // Stop before item reads so shared credentials cannot probe private item numbers.
-  const { value: repository } = await fetchGitHubJsonPage(repositoryUrl, fetchImpl, token, {
+  return assertRepositoryAccess(
+    repositoryUrl,
+    fetchImpl,
+    token,
     identity,
     signal,
-    apiBaseUrl: GITHUB_API_ORIGIN,
-  });
-  if (!isPublicGitHubRepository(repository)) {
-    throw new ControlUiGitHubError(404, "GitHub repository is not public");
-  }
-  return repository;
+    Boolean(token && identity?.allowPrivateRepositories),
+  );
+}
+
+/** Public agent search never inherits an administrator reader's private grant. */
+export function assertPublicGitHubRepository(
+  repositoryUrl: string,
+  fetchImpl: typeof fetch,
+  token?: string,
+  identity?: ControlUiGitHubPreviewIdentity,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> {
+  return assertRepositoryAccess(repositoryUrl, fetchImpl, token, identity, signal, false);
 }
 
 function redirectedRepositoryApiUrl(
@@ -283,7 +321,7 @@ async function fetchPreview(
       assertSessionRepositoryUrl(url, session);
       return readSessionGitHubRepository(session, fetchImpl, signal);
     }
-    return assertPublicGitHubRepository(url, fetchImpl, token, identity, signal);
+    return assertReadableGitHubRepository(url, fetchImpl, token, identity, signal);
   };
   const repositoryUrl = `${apiBaseUrl}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}`;
   const collection =
@@ -318,7 +356,7 @@ async function fetchPreview(
     });
     return value;
   };
-  // Both item reads use the same public admission and redirect guard. Commits
+  // Both item reads use the same repository admission and redirect guard. Commits
   // are optional decoration; their failure must not discard useful metadata.
   const item = readItem(itemUrl);
   const commits =
@@ -414,7 +452,10 @@ export async function loadControlUiGitHubPreview(
   // Cache lookup has no external effect. Dispatch and delivery revalidate live credentials.
   identity?.assertSelected();
   const { token, cacheScope } = identity ?? { token: undefined, cacheScope: "anonymous" };
-  const key = cacheKey(target, `${cacheScope}\0${githubApiCredentialCacheScope(token)}`);
+  const key = cacheKey(
+    target,
+    `${cacheScope}\0${githubApiCredentialCacheScope(token)}\0${identity?.allowPrivateRepositories === true ? "private" : "public"}`,
+  );
   const previewCache =
     previewCaches.get(fetchImpl) ??
     createStaleWhileRevalidateCache<ControlUiGitHubPreview>({

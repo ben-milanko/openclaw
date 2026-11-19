@@ -4,6 +4,7 @@ import {
 } from "@openclaw/normalization-core/record-coerce";
 import { readStringValue } from "@openclaw/normalization-core/string-coerce";
 import { Type } from "typebox";
+import { UpdateRunParamsSchema } from "../../../packages/gateway-protocol/src/schema/config.js";
 import { prepareCommandOwnerAuthority } from "../../auto-reply/command-auth.js";
 import { formatCommandOwnerHint } from "../../commands/doctor-command-owner.js";
 import { GatewayClientRequestError } from "../../gateway/client.js";
@@ -83,6 +84,7 @@ const GatewayToolSchema = Type.Object({
   dryRun: Type.Optional(
     Type.Boolean({ description: "update.cleanup only: preview without removing recovery copies." }),
   ),
+  target: UpdateRunParamsSchema.properties.target,
   path: Type.Optional(
     Type.String({
       description: "Required for config.schema.lookup; optional for config.get.",
@@ -94,6 +96,7 @@ const GatewayUpdateToolSchema = Type.Object({
   action: stringEnum(MAINTENANCE_ACTIONS),
   note: GatewayToolSchema.properties.note,
   dryRun: GatewayToolSchema.properties.dryRun,
+  target: GatewayToolSchema.properties.target,
 });
 
 export function createGatewayTool(options?: {
@@ -216,6 +219,7 @@ export function createGatewayTool(options?: {
             sessionKey: caller?.sessionKey,
             deliveryContext,
             note: readToolStringParam(params, "note"),
+            ...(params.target !== undefined ? { target: params.target } : {}),
           },
           {
             // An explicit binding prevents the standalone client's remote fallback.

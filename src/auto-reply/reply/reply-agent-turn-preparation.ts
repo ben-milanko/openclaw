@@ -678,6 +678,36 @@ export async function prepareReplyAgentTurn<TConfigured>(
           return { kind: "skipped", reason: "goal-inactive", operation } as const;
         }
       }
+      if (goalContinuation) {
+        if (!replySessionKey) {
+          return { kind: "skipped", reason: "goal-inactive", operation } as const;
+        }
+        const { patchSessionEntryCore } = await import("../../config/sessions/session-accessor.js");
+        // Claim one lifetime turn through the current entry writer before handing
+        // it to execution. Its snapshot/CAS and memory actor paths preserve current
+        // goal/generation facts; cancellation and owner authority guard the effect.
+        const updated = await patchSessionEntryCore(
+          { agentId: run.agentId, sessionKey: replySessionKey, storePath: params.defaults.storePath },
+          (entry) => {
+            if (
+              operation.abortSignal.aborted ||
+              getFollowupQueueDepth(replySessionKey) > 0 ||
+              !isGoalContinuationCurrent(goalContinuation, entry)
+            ) {
+              return null;
+            }
+            return { goal: { ...entry.goal!, continuationTurns: entry.goal!.continuationTurns + 1 } };
+          },
+          { workerGuard: { assertMutationAllowed: assertAdmissionCurrent } },
+        );
+        assertAdmissionCurrent();
+        if (!updated) {
+          return { kind: "skipped", reason: "goal-inactive", operation } as const;
+        }
+        const beforeClaim = session.current();
+        session.publish(updated);
+        refreshTurnSessionState(updated, beforeClaim);
+      }
       // Only a returned turn transfers presentation cleanup to the runner.
       queuedFollowupAdmitted = false;
       releaseSourceAdmission = undefined;

@@ -644,9 +644,7 @@ export function createCronTool(opts?: CronToolOptions): AnyAgentTool {
               if (result.enqueued !== true || result.run) {
                 return jsonResult(result);
               }
-              const followUp = managementAuthority?.managementOnly
-                ? "check it later on the Automations page"
-                : "check it later with runs jobId runId";
+              const followUp = "check it later with runs jobId runId";
               if (!isRecord(result)) {
                 throw new Error("cron.list returned an invalid inventory response");
               }

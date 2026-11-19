@@ -14,6 +14,7 @@ import { isCronRunSessionKey } from "../sessions/session-key-utils.js";
 import { resolveSkillWorkshopToolConstructionBlock } from "../skills/workshop/tool-availability.js";
 import { hasMultipleSessionSharingIdentitiesNative } from "../state/user-profile-list.native.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.shared.js";
+import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel-constants.js";
 import { hasConfiguredWebSearchProvider } from "../web-search/runtime.js";
 import {
   resolveAgentDir,
@@ -422,13 +423,15 @@ function* createOpenClawToolsSteps(
     denylist: explicitFactoryDenylist,
   });
   const widgetBoardSessionKey = scheduledTargets?.boardSessionKey ?? sessionKey;
-  // A recorded widget surface can keep authoring its durable board on internal
-  // wakes. Tool policy and board authority still apply; this grants no renderer.
+  // Durable WebChat follow-ups may author their own board without borrowing a
+  // renderer. Recorded surfaces and explicitly capped scheduled turns retain
+  // their existing board authority and tool policy.
   // A run admitted with scheduled tool targets is a scheduled turn on every runtime.
   const scheduledCaller =
     options?.gatewayCallerScheduled === true || scheduledTargets !== undefined;
   const pinnedWidgetAuthoringAdmitted =
-    ((inlineWidgetClientAvailable && !scheduledCaller) ||
+    (((inlineWidgetClientAvailable || options?.agentChannel === INTERNAL_MESSAGE_CHANNEL) &&
+      !scheduledCaller) ||
       options?.pinnedWidgetAuthoring === true ||
       (scheduledCaller && scheduledWidgetExplicitlyAllowed)) &&
     !currentChannelWidgetPresenter &&

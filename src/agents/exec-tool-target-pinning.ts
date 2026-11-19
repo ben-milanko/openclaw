@@ -6,6 +6,7 @@
 // in-memory object identity only — nothing here is persisted.
 import { asNonArrayRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { getPluginToolExecutionSourceGuard } from "../plugins/plugin-tool-execution.js";
 import { requireValidExecTarget } from "../infra/exec-approvals-core.js";
 import { markToolExecutionNotStarted } from "./tool-effect-receipt.js";
 import type { AnyAgentTool } from "./tools/common.js";
@@ -142,13 +143,28 @@ export function readCronScheduledToolProjection(tool: {
 export function copyCronScheduledToolProjection(source: AnyAgentTool, target: AnyAgentTool): void {
   const projection = scheduledToolProjections.get(source);
   if (
-    projection &&
-    source.name === projection.sourceToolName &&
-    target.name === projection.sourceToolName &&
-    source.execute === projection.execute &&
-    target.execute === projection.execute
+    !projection ||
+    source.name !== projection.sourceToolName ||
+    target.name !== projection.sourceToolName ||
+    source.execute !== projection.execute
   ) {
+    return;
+  }
+  const execute = target.execute;
+  if (execute === projection.execute) {
     scheduledToolProjections.set(target, projection);
+    return;
+  }
+  const assertViewActive = getPluginToolExecutionSourceGuard(target, projection.execute, execute);
+  if (assertViewActive) {
+    scheduledToolProjections.set(target, {
+      ...projection,
+      execute,
+      assertActive: () => {
+        projection.assertActive();
+        assertViewActive();
+      },
+    });
   }
 }
 

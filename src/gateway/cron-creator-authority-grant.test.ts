@@ -118,6 +118,9 @@ describe("cron creator authority grants", () => {
     expect(legacy.cronCreatorAuthorityCapability?.controlUiAdmin).toBe(true);
     expect(current.cronCreatorAuthorityCapability?.controlUiAdmin).toBe(true);
     expect(() => mint(scope)).toThrow("Automation creation is not granted");
+    expect(() => mint(scope, undefined, undefined, undefined, "requester")).toThrow(
+      "Automation creation is not granted",
+    );
   });
   it("carries direct-local origin without claiming channel requester authority", () => {
     const local = createScope("run-local", { kind: "local" });

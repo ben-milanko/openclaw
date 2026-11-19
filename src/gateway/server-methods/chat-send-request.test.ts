@@ -56,7 +56,10 @@ async function expectError(
 
 const toolBindings = { browser: { kind: "tab", tabId: 1, targetId: "target" } };
 const mention = (start: number, end: number, profileId = "bob") => ({ profileId, start, end });
-const goalIntent = () => ({ kind: "session-goal-start", version: 1, issuedAtMs: Date.now() });
+const goalIntent = (maxContinuationTurns?: number) => ({
+  kind: "session-goal-start", version: 1, issuedAtMs: Date.now(),
+  ...(maxContinuationTurns === undefined ? {} : { maxContinuationTurns }),
+});
 async function expectRejected(overrides: Record<string, unknown>, client: Client = humanClient()) {
   expect(await normalize(overrides, client)).toMatchObject({ ok: false });
 }
@@ -215,14 +218,16 @@ it("requires authenticated human ingress and rejects unsupported mention modes",
 it.each(["/stop", "  résumé\n\n  preserve spacing  "])(
   "admits Goal objective %j literally without command interpretation",
   async (message) => {
-    const value = await normalizeValue({ message, intent: goalIntent() }, null);
+    const value = await normalizeValue({ message, intent: goalIntent(3) }, null);
     expect(value).toMatchObject({
       inboundMessage: message,
       rawMessage: message,
       stopCommand: false,
       turnKind: "main",
       suppressCommandInterpretation: true,
-      goalOperation: { action: "start", objective: message, operationId: "request-1" },
+      goalOperation: {
+        action: "start", objective: message, operationId: "request-1", maxContinuationTurns: 3,
+      },
     });
   },
 );
@@ -240,6 +245,9 @@ it.each([
   { idempotencyKey: "x".repeat(129) },
   { intent: { kind: "session-goal-resume", version: 1, issuedAtMs: 1 } },
   { intent: { kind: "session-goal-start", version: 2, issuedAtMs: 1 } },
+  ...[0, 101, 1.5].map((maxContinuationTurns) => ({
+    intent: { kind: "session-goal-start", version: 1, issuedAtMs: 1, maxContinuationTurns },
+  })),
   { intent: { kind: "session-goal-start", version: 1 } },
   {
     intent: { kind: "session-goal-start", version: 1, issuedAtMs: 1, objective: "second target" },

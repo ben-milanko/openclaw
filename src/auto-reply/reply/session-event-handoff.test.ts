@@ -26,6 +26,7 @@ import { replaceSessionEntrySync } from "../../config/sessions/session-accessor.
 import * as sessionReplacement from "../../config/sessions/session-accessor.sqlite-replacement-worker.js";
 import * as sessionEntryRead from "../../config/sessions/session-entry-read-runtime.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { captureAmbientGatewayOperatorAuthority } from "../../gateway/operator-invocation-authority.js";
 import { makeCronJob } from "../../cron/delivery.test-helpers.js";
 import { TEST_SCHEDULED_OCCURRENCE } from "../../cron/scheduled-occurrence.test-support.js";
 import { clearAgentRunContext, registerAgentRunContext } from "../../infra/agent-run-registry.js";
@@ -35,6 +36,10 @@ import {
   peekSystemEventEntries,
   resetSystemEventsForTest,
 } from "../../infra/system-events.js";
+import {
+  getPluginRuntimeGatewayRequestScope,
+  withPluginRuntimeGatewayRequestScope,
+} from "../../plugins/runtime/gateway-request-scope.js";
 import * as gatewayWork from "../../process/gateway-work-admission.js";
 import { openOpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
 import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
@@ -57,7 +62,7 @@ import { prepareSessionEventTargetForHost as prepareTarget } from "./session-eve
 // These cases stop before turn admission. Unexpected dispatch is a failure,
 // never a synthetic adoption/settlement supplied by the fixture.
 const dispatch = vi.hoisted(() =>
-  vi.fn(() => {
+  vi.fn(async () => {
     throw new Error("Unexpected reply dispatch for a retired event target");
   }),
 );
@@ -132,7 +137,7 @@ function enqueueCompletion(
 
 async function withTargetFixture(
   run: (fixture: OpenClawTestState & { storePath: string }) => Promise<void>,
-  options: { empty?: boolean; native?: boolean } = {},
+  options: { empty?: boolean; native?: boolean; expectDispatch?: boolean } = {},
 ) {
   await withOpenClawTestState(
     {
@@ -155,7 +160,9 @@ async function withTargetFixture(
       const storePath = resolveSessionStorePathCore(undefined, { agentId: "main", env: state.env });
       try {
         await run({ ...state, storePath });
-        expect(dispatch).not.toHaveBeenCalled();
+        if (!options.expectDispatch) {
+          expect(dispatch).not.toHaveBeenCalled();
+        }
       } finally {
         resetSystemEventsForTest();
         gatewayWork.resetGatewayWorkAdmission();
@@ -191,6 +198,49 @@ afterAll(() => {
 });
 
 describe("session event target custody", () => {
+  it("starts a completion after its producer's Gateway request retires", async () => {
+    await withTargetFixture(async ({ env }) => {
+      const target = await captureTarget("main", sessionKey, { env });
+      let requestActive = true;
+      const resolveGatewayContext = () => undefined;
+      dispatch.mockImplementationOnce(async () => {
+        await captureAmbientGatewayOperatorAuthority({
+          missingBindingError: () => new Error("Missing completion Gateway binding"),
+        });
+        expect(getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext).toBe(
+          resolveGatewayContext,
+        );
+        throw new Error("Completion reached independent dispatch");
+      });
+      const scope = {
+        isWebchatConnect: () => true,
+        hasCurrentClientAuthority: () => requestActive,
+        resolveGatewayContext,
+      };
+      const receipt = withPluginRuntimeGatewayRequestScope(scope, () =>
+        enqueueEvent("Process completed", {
+          agentId: "main",
+          sessionKey,
+          source: "exec",
+          expectedTarget: target,
+        }),
+      );
+      requestActive = false;
+      await expect(receipt.settled).resolves.toMatchObject({
+        status: "failed",
+        error: "Error: Completion reached independent dispatch",
+      });
+      await expect(
+        withPluginRuntimeGatewayRequestScope(scope, () =>
+          captureAmbientGatewayOperatorAuthority({
+            missingBindingError: () => new Error("Missing"),
+          }),
+        ),
+      ).rejects.toThrow("Gateway caller authority is no longer active");
+      expect(dispatch).toHaveBeenCalledOnce();
+    }, { expectDispatch: true });
+  });
+
   it("retains scheduled creation restrictions and private skill pins only for absent targets", async ({
     state: _state,
   }) => {

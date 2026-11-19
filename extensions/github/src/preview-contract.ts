@@ -5,6 +5,8 @@ import { parseGitHubTarget, type GitHubTarget } from "./targets.js";
 export type ControlUiGitHubPreviewIdentity = {
   token: string | undefined;
   cacheScope: string;
+  /** Host-granted access, revalidated by the identity's live authority checks. */
+  allowPrivateRepositories?: true;
   /** Host service/env credentials may retry a stale HTTP 401 anonymously. */
   optionalAuth?: true;
   stale?: true;

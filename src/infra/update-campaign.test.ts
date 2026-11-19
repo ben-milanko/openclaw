@@ -144,6 +144,27 @@ describe("UpdateCampaignController", () => {
     expect(onChange).toHaveBeenLastCalledWith(undefined);
   });
 
+  it("does not adopt a version-only campaign for a reviewed artifact at the same version", () => {
+    const { controller, apply, onChange, announce } = fixture();
+    const reviewedTarget = {
+      kind: "package" as const,
+      path: "/reviewed/openclaw.tgz",
+      version: "2.0.0",
+      buildId: "reviewed-custom-build",
+      sha256: "a".repeat(64),
+    };
+    expect(controller.adopt(reviewedTarget)).toEqual({ status: "absent" });
+    announce({ inspect: inspectors({ getQueueSize: () => 1 }) });
+    const campaign = controller.getState();
+
+    expect(controller.adopt(reviewedTarget)).toEqual({ status: "mismatch" });
+    expect(controller.getState()).toEqual(campaign);
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(apply).not.toHaveBeenCalled();
+    expect(controller.adopt()).toMatchObject({ status: "adopted", campaignId: "campaign-1" });
+    expect(controller.adopt(reviewedTarget)).toEqual({ status: "applying" });
+  });
+
   it("keeps a different Git upstream waiting after mismatched adoption", () => {
     const { controller, apply, onChange, announce } = fixture();
     const matching = {

@@ -134,6 +134,7 @@ function entry(): SessionEntry {
       tokenStart: 0,
       tokensUsed: 0,
       continuationTurns: 0,
+      maxContinuationTurns: 3,
     },
   };
 }
@@ -283,6 +284,19 @@ describe("Goal continuation eligibility", () => {
       ).resolves.toBe(expected);
     },
   );
+  it.each([undefined, 0, 3] as const)(
+    "requires an unspent explicit continuation bound (%s)",
+    (limit) => {
+      const current = entry();
+      if (limit === undefined) {
+        delete current.goal!.maxContinuationTurns;
+      } else {
+        current.goal!.continuationTurns = limit;
+      }
+      expect(isGoalContinuationCurrent(identity, current)).toBe(limit === 0);
+    },
+  );
+
   it("checks current Goal, incarnation, stop and runtime facts before continuing", () => {
     const current = entry();
     expect(isGoalContinuationCurrent(identity, undefined)).toBe(false);

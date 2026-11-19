@@ -483,6 +483,52 @@ it.each([true, false])(
     }),
 );
 
+it.each([false, true])(
+  "does not copy source-reply attachments into the terminal row (new final media: %s)",
+  async (hasNewFinalMedia) => {
+    await withOpenClawTestState({ label: "agent-source-reply-media" }, async (state) => {
+      const { imagePath: sentPath } = await writeMediaImage(state, "already-sent.png");
+      const { imagePath: finalPath } = await writeMediaImage(state, "new-final.png");
+      // The finalizer consumes the same receipt-backed mirror payload as message-tool delivery.
+      // Its existing transcript owner must not be replaced by the terminal assistant row.
+      const { replyItems } = buildSourceReplyPayloadState({
+        sessionKey: "agent:main:test",
+        agentId: "main",
+        payloads: [
+          {
+            text: "Already sent",
+            mediaUrls: [sentPath],
+            transcriptOwner: true,
+            sourceReplyFinal: false,
+          },
+        ],
+      });
+      const authored = makeAgentAssistantMessage({
+        content: [{ type: "text", text: hasNewFinalMedia ? "Completed" : "NO_REPLY" }],
+        stopReason: "stop",
+      });
+      const { result, context, sessionKey, messageAtFinal } = await runMediaTurn(state, authored, {
+        payloads: [
+          ...replyItems,
+          ...(hasNewFinalMedia ? [{ text: "Completed", mediaUrls: [finalPath] }] : []),
+        ],
+      });
+      expect(result.terminalOutcome.status).toBe("ok");
+      expect(context.logGateway.warn).not.toHaveBeenCalled();
+      const records = await listManagedImageRecordEntries({ sessionKey });
+      expect(records).toHaveLength(hasNewFinalMedia ? 1 : 0);
+      if (hasNewFinalMedia) {
+        expect(messageAtFinal?.openclawDisplayContent).toEqual([
+          { type: "text", text: "Completed" },
+          expect.objectContaining({ type: "image", alt: "new-final.png" }),
+        ]);
+      } else {
+        expect(messageAtFinal).not.toHaveProperty("openclawDisplayContent");
+      }
+    });
+  },
+);
+
 it.each<MediaFinal & { name: string; payload?: Partial<ReplyPayload> }>([
   { name: "sensitive media", payload: { sensitiveMedia: true } },
   { name: "reasoning media", payload: { isReasoning: true } },

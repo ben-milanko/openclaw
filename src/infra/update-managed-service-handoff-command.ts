@@ -1,8 +1,10 @@
+import type { PackageUpdateTarget } from "../../packages/gateway-protocol/src/schema/config.js";
 import {
   isStandaloneRuntimeExecutable,
   resolveOpenClawCliInvocation,
 } from "../../cli-invocation.mjs";
 import { formatCliCommand } from "../cli/command-format.js";
+import { quoteCliArg } from "../cli/quote-cli-arg.js";
 import { isBunRuntime, isNodeRuntime } from "../daemon/runtime-binary.js";
 import { resolveRuntimeArgs } from "./runtime-worker-url.js";
 import type { UpdateChannel } from "./update-channels.js";
@@ -11,6 +13,7 @@ export function resolveUpdateCliArgv(params: {
   timeoutMs?: number;
   channel?: UpdateChannel;
   tag?: string;
+  packageTarget?: PackageUpdateTarget;
   acceptCapabilities?: boolean;
   fullIntegrityCheck?: boolean;
   admission?: "auto" | "installed";
@@ -26,8 +29,12 @@ export function resolveUpdateCliArgv(params: {
     ...(params.acceptCapabilities ? ["--accept-capabilities"] : []),
     ...(params.fullIntegrityCheck ? ["--full-integrity-check"] : []),
     ...(params.admission ? ["--admission", params.admission] : []),
-    ...(params.channel ? ["--channel", params.channel] : []),
-    ...(params.tag ? ["--tag", params.tag] : []),
+    ...(params.packageTarget
+      ? ["--package-target", JSON.stringify(params.packageTarget)]
+      : [
+          ...(params.channel ? ["--channel", params.channel] : []),
+          ...(params.tag ? ["--tag", params.tag] : []),
+        ]),
     ...(typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs)
       ? ["--timeout", String(Math.max(1, Math.ceil(params.timeoutMs / 1000)))]
       : []),
@@ -63,6 +70,7 @@ export function formatManagedServiceUpdateCommand(
   return formatCliCommand(
     resolveUpdateCliArgv(params ?? {})
       .toSpliced(3, 1)
+      .map(quoteCliArg)
       .join(" "),
     env,
   );

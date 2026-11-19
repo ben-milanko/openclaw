@@ -1,7 +1,7 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { MsgContext } from "openclaw/plugin-sdk/reply-runtime";
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { formatSignalMediaText } from "../media-text.js";
 import type { SignalDataMessage, SignalEventHandlerDeps } from "./event-handler.types.js";
 
@@ -66,13 +66,14 @@ function createMentionHandler(
   groups: NonNullable<NonNullable<OpenClawConfig["channels"]>["signal"]>["groups"] = {
     "*": { requireMention: true },
   },
+  assistantRequestPrefixes?: string[],
 ) {
   return createSignalEventHandler(
     createBaseSignalEventHandlerDeps({
       cfg: {
         messages: { inbound: { debounceMs: 0 }, groupChat: { mentionPatterns } },
         channels: {
-          signal: { groups, groupPolicy: deps.groupPolicy, groupAllowFrom: deps.groupAllowFrom },
+          signal: { groups, groupPolicy: deps.groupPolicy, groupAllowFrom: deps.groupAllowFrom, assistantRequestPrefixes },
         },
       },
       groupHistories,
@@ -264,4 +265,59 @@ it.each([false, true])("mention-skip ingest honors group override=%s", async (ov
       }),
     );
   }
+});
+
+describe("explicit assistant requests on a personal account", () => {
+  beforeEach(() => {
+    capturedCtx = undefined;
+  });
+  it.each([false, true])(
+    "drops ordinary chat and human mentions before dispatch (group=%s)",
+    async (group) => {
+      const handler = createMentionHandler(
+        { accountUuid: "human-account" }, [], { "*": { requireMention: false } }, ["Helper:"],
+      );
+      for (const message of [
+        "hello",
+        "Anyone know the answer?",
+        "@Human please help",
+        "We discussed Helper: explain this",
+        "Helper:",
+        "￼ please help",
+      ]) {
+        await handler(
+          createSignalReceiveEvent({
+            dataMessage: {
+              message,
+              mentions: [{ uuid: "human-account", start: 0, length: 1 }],
+              ...(group ? { groupInfo: { groupId: "g1" } } : {}),
+            },
+          }),
+        );
+      }
+      expect(capturedCtx).toBeUndefined();
+    },
+  );
+  it.each([false, true])(
+    "admits explicit textual requests independent of native mentions (group=%s)",
+    async (group) => {
+      const handler = createMentionHandler(
+        { accountUuid: "human-account" }, [], { "*": { requireMention: true } }, ["Helper:"],
+      );
+      await handler(
+        createSignalReceiveEvent({
+          dataMessage: {
+            message: "Helper: explain the diagram",
+            ...(group ? { groupInfo: { groupId: "g1" } } : {}),
+          },
+        }),
+      );
+      expect(getCapturedCtx().Body).toContain("Helper: explain the diagram");
+    },
+  );
+  it("fails closed with an empty request-prefix list", async () => {
+    const handler = createMentionHandler({}, [], { "*": { requireMention: false } }, []);
+    await handler(groupEvent("Helper: explain the diagram"));
+    expect(capturedCtx).toBeUndefined();
+  });
 });

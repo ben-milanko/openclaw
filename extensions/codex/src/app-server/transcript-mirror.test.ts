@@ -347,7 +347,7 @@ describe("mirrorTranscript", () => {
     expect(published.at(-1)).toMatchObject({
       content: [{ type: "text", text: rewrittenText }],
       openclawDelivery: { mediaUrls: ["./artifact.json"] },
-      idempotencyKey: "codex-app-server:thread-1:turn-1:assistant",
+      idempotencyKey: "run-media",
     });
     expect(await readTranscriptMessages(target)).toEqual(published);
   });

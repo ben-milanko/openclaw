@@ -1095,6 +1095,7 @@ async function spawnManagedServiceUpdateHandoff(
     timeoutMs: params.timeoutMs,
     channel: params.channel,
     tag: params.tag,
+    packageTarget: params.packageTarget,
   };
   const commandRuntime = {
     execPath: handoffNodeExecutable,

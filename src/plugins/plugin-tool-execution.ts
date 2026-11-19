@@ -11,20 +11,56 @@ const ToolExecutionOwner = resolveGlobalSingleton(
   () =>
     class extends PluginHostObject {
       #bind: ToolExecutionBinding;
+      #assertActive: () => void;
+      #sourceExecute: unknown;
+      #boundExecute: unknown;
 
-      constructor(tool: object, bind: ToolExecutionBinding) {
+      constructor(tool: object, bind: ToolExecutionBinding, assertActive: () => void) {
         super(tool);
         this.#bind = bind;
+        this.#assertActive = assertActive;
       }
 
       static bindSource<T extends object>(target: object, source: T): T {
         return #bind in target ? target.#bind(source) : source;
+      }
+
+      static bindExecute(target: object, sourceExecute: unknown, boundExecute: unknown): void {
+        if (#sourceExecute in target) {
+          target.#sourceExecute = sourceExecute;
+          target.#boundExecute = boundExecute;
+        }
+      }
+
+      static sourceGuard(
+        target: object,
+        sourceExecute: unknown,
+        boundExecute: unknown,
+      ): (() => void) | undefined {
+        if (
+          !(#sourceExecute in target) ||
+          target.#sourceExecute !== sourceExecute ||
+          target.#boundExecute !== boundExecute
+        ) {
+          return undefined;
+        }
+        target.#assertActive();
+        return target.#assertActive;
       }
     },
 );
 
 export function bindPluginToolExecutionSource<T extends object>(target: object, source: T): T {
   return ToolExecutionOwner.bindSource(target, source);
+}
+
+/** Preserve host metadata only through the exact execution view minted by this owner. */
+export function getPluginToolExecutionSourceGuard(
+  target: object,
+  sourceExecute: unknown,
+  boundExecute: unknown,
+): (() => void) | undefined {
+  return ToolExecutionOwner.sourceGuard(target, sourceExecute, boundExecute);
 }
 
 const SOURCE_TOOL = Symbol.for("openclaw.beforeToolCallSourceTool");
@@ -49,14 +85,14 @@ export function createPluginToolExecutionBinding(context: {
         const view = context.wrapProxy(tool);
         views.set(tool, view);
         views.set(view, view);
-        void new ToolExecutionOwner(view, context.wrapProxy);
+        void new ToolExecutionOwner(view, context.wrapProxy, () => context.admit(() => {}));
         return view;
       }
     }
     const view = Object.create(Object.getPrototypeOf(tool));
     views.set(tool, view);
     views.set(view, view);
-    void new ToolExecutionOwner(view, bind);
+    void new ToolExecutionOwner(view, bind, () => context.admit(() => {}));
     context.register(view, tool);
     const bindValue = (key: PropertyKey, value: unknown): unknown => {
       if (
@@ -66,9 +102,15 @@ export function createPluginToolExecutionBinding(context: {
       ) {
         return bind(value);
       }
-      return typeof value === "function"
-        ? (...args: unknown[]) => context.call(value, tool, args)
-        : value;
+      const bound =
+        typeof value === "function"
+          ? (...args: unknown[]) => context.call(value, tool, args)
+          : value;
+      if (key === "execute") {
+        // Capture the actual bound callable, not a later getter/property value.
+        ToolExecutionOwner.bindExecute(view, value, bound);
+      }
+      return bound;
     };
     for (
       let owner: object | null = tool;

@@ -45,8 +45,20 @@ export function registerGoalAutomaticContinuationCases(
     patchSessionEntryCore(scope(), (entry) => ({
       goal: entry.goal ? { ...entry.goal, status } : undefined,
     }));
-  const start = async (message: string) =>
-    expect((await rpc("chat.send", goalStart(message))).mock.calls[0]?.[0]).toBe(true);
+  const start = async (message: string, maxContinuationTurns = 3) =>
+    expect(
+      (
+        await rpc("chat.send", {
+          ...goalStart(message),
+          intent: {
+            kind: "session-goal-start",
+            version: 1,
+            issuedAtMs: Date.now(),
+            maxContinuationTurns,
+          },
+        })
+      ).mock.calls[0]?.[0],
+    ).toBe(true);
   it("nudges consecutive normal final turns until the same Goal is complete", async () => {
     const completed = createDeferred();
     runEmbeddedAgent.mockImplementation(async (params) => {
@@ -67,6 +79,26 @@ export function registerGoalAutomaticContinuationCases(
     expect(loadSessionEntry(scope())?.goal).toMatchObject({
       status: "complete",
       continuationTurns: 2,
+    });
+  });
+
+  it("stops at the persisted lifetime continuation limit while leaving an unfinished goal active", async () => {
+    const secondStarted = createDeferred();
+    runEmbeddedAgent.mockImplementation(async (params) => {
+      if (runEmbeddedAgent.mock.calls.length === 2) {
+        secondStarted.resolve();
+      }
+      return result(params.sessionId);
+    });
+    await start("Finish within one follow-up turn", 1);
+    await secondStarted.promise;
+    await expectDrained();
+    expect(runEmbeddedAgent).toHaveBeenCalledTimes(2);
+    expect(userMessages()).toHaveLength(1);
+    expect(loadSessionEntry(scope())?.goal).toMatchObject({
+      status: "active",
+      maxContinuationTurns: 1,
+      continuationTurns: 1,
     });
   });
 

@@ -96,6 +96,15 @@ it("permits explicit on-exit edits through admitted management", async () => {
   });
 });
 
+it("reads one recorded run through admitted management without minting creator authority", async () => {
+  await withAdminTool("unknown", undefined, async (tool, calls) => {
+    expect(tool.description).toContain("runs jobId runId?");
+    expect(tool.parameters).toHaveProperty("properties.runId");
+    await tool.execute("recorded-run", { action: "runs", jobId, runId: "finished-run" });
+    expect(calls).toEqual([["cron.runs", { id: jobId, runId: "finished-run" }]]);
+  });
+});
+
 it("does not expose stream creation through a management grant", async () => {
   await withAdminTool("unknown", undefined, async (tool, calls) => {
     await expect(
@@ -166,7 +175,7 @@ it("limits management authority to its admitted actions", async () => {
     "unknown",
     undefined,
     async (tool, calls) => {
-      const actions = ["list", "get", "update", "run", "remove", "bind"];
+      const actions = ["list", "get", "runs", "update", "run", "remove", "bind"];
       expect(tool.parameters).toHaveProperty("properties.action.enum", actions);
       for (const key of ["in", "text", "mode", "contextMessages", "sessionKey"]) {
         expect(tool.parameters).not.toHaveProperty(`properties.${key}`);
@@ -187,7 +196,7 @@ it("limits management authority to its admitted actions", async () => {
       expect((await tool.execute("manager-get", { action: "get", jobId })).details).toMatchObject({
         id: jobId,
       });
-      for (const action of ["status", "runs"]) {
+      for (const action of ["status", "history"]) {
         await expect(tool.execute(`manager-${action}`, { action, jobId })).rejects.toThrow(
           "can only list, get, update, run, remove, or bind automations",
         );

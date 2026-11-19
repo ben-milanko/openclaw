@@ -52,6 +52,7 @@ import {
   execApprovalsPublication,
   withExecApprovalsPublication,
 } from "./exec-approvals-publication.js";
+import { captureExecApprovalsReadAuthority } from "./exec-approvals-read-authority.js";
 import type { RemovedExecApprovalPolicies } from "./exec-approvals-retirement.worker.js";
 import { attachExecApprovalsSocket } from "./exec-approvals-socket.js";
 import {
@@ -244,6 +245,7 @@ export function loadExecApprovalsReadOnly(): ExecApprovalsFile {
 
 /** A committed policy view keeps the final execution guard synchronous and free of SQL. */
 function retainExecApprovalsCurrentRead(context: OpenClawStateWorkerContext) {
+  const assertCurrent = captureExecApprovalsReadAuthority(context);
   const key = context.admission.identity.key;
   let policy = currentPolicies.get(key);
   if (!policy) {
@@ -258,7 +260,7 @@ function retainExecApprovalsCurrentRead(context: OpenClawStateWorkerContext) {
       }
     },
     read(): ExecApprovalsFile {
-      context.admission.assertCurrent();
+      assertCurrent();
       const current = currentPolicies.get(key);
       if (!current?.file || current.pending.size) {
         throw new Error("Exec approval policy is unavailable or changing before execution");

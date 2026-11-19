@@ -14,7 +14,7 @@ type SessionGoalOperationIdentity = {
 
 export type SessionGoalOperation = SessionGoalOperationIdentity &
   (
-    | { action: "start"; objective: string; tokenBudget?: number }
+    | { action: "start"; objective: string; tokenBudget?: number; maxContinuationTurns?: number }
     | { action: "edit"; goalId: string; objective: string }
     /** Internal completed-interruption receipt; preserves the Goal unchanged. */
     | { action: "replace"; goalId: string; expectedRunId: string }

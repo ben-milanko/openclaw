@@ -1,6 +1,6 @@
 # GitHub
 
-Read public GitHub issues, pull requests, and commits beside your conversation in
+Read GitHub issues, pull requests, and commits beside your conversation in
 OpenClaw. This official plugin is included with OpenClaw and enabled by default.
 
 ## What it adds
@@ -15,7 +15,7 @@ OpenClaw. This official plugin is included with OpenClaw and enabled by default.
 
 ## Get started
 
-Hover or focus a public GitHub issue, pull request, or commit link in chat to preview it. Click the link to read it beside chat. The reader opens
+Hover or focus a GitHub issue, pull request, or commit link in chat to preview it. Click the link to read it beside chat. The reader opens
 beside the conversation. Use **Open on GitHub** for the full page.
 
 Manage the plugin from **Plugins → GitHub**. If you use a plugin allowlist, include
@@ -52,7 +52,9 @@ Both tools are included in the coding profile and default sandbox allowlist. Exp
 tool allowlists and deny rules still apply; disabling the plugin removes both tools.
 The plugin does not provide a GitHub Copilot model provider. Reading and search are limited to
 public repositories and do not change issues, post comments, or merge pull
-requests. Use **Open on GitHub** for private repositories or editing.
+requests. Gateway administrators can also read private repositories accessible
+to the selected GitHub credential in the Control UI reader; other viewers and
+the agent tools remain public-only. Use **Open on GitHub** for editing.
 
 No GitHub sign-in is required for public content. When available, the reader uses
 the selected agent's managed GitHub identity or the configured Control UI GitHub

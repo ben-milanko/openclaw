@@ -15,6 +15,18 @@ function expectInvalidSignalConfig(config: unknown) {
   return res.error.issues;
 }
 
+it.each([
+  { assistantRequestPrefixes: ["Helper:"] },
+  { assistantRequestPrefixes: ["Helper,"] },
+  { assistantRequestPrefixes: [] },
+])("accepts explicit assistant request prefixes %j", expectValidSignalConfig);
+
+it.each([
+  { assistantRequestPrefixes: [""] },
+  { assistantRequestPrefixes: ["Helper"] },
+  { assistantRequestPrefixes: [":"] },
+])("rejects ambiguous request prefixes %j", expectInvalidSignalConfig);
+
 it('rejects dmPolicy="open" without allowFrom "*"', () => {
   const issues = expectInvalidSignalConfig({ dmPolicy: "open", allowFrom: ["+15555550123"] });
   expect(issues[0]?.path.join(".")).toBe("allowFrom");

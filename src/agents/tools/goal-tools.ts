@@ -30,6 +30,12 @@ type GoalToolOptions = {
 const GetGoalToolSchema = Type.Object({});
 
 const CreateGoalToolSchema = Type.Object({
+  max_continuation_turns: Type.Optional(
+    Type.Union([Type.Integer({ minimum: 1, maximum: 100 }), Type.Null()], {
+      description:
+        "Opt in to at most this many automatic follow-up turns (1–100), only when explicitly requested. Omit or null preserves manual continuation.",
+    }),
+  ),
   objective: Type.String({
     description: "Concrete objective; explicit request only.",
   }),
@@ -99,12 +105,14 @@ export function createCreateGoalTool(options: GoalToolOptions): AnyAgentTool {
       const tokenBudget = readPositiveIntegerParam(params, "token_budget", {
         message: "token_budget must be a positive integer",
       });
+      const maxContinuationTurns = readPositiveIntegerParam(params, "max_continuation_turns");
       const scope = resolveGoalSessionScope(options);
       const goal = await createSessionGoal({
         ...scope,
         actor: { type: "agent", id: scope.sessionKey },
         objective,
         ...(tokenBudget !== undefined ? { tokenBudget } : {}),
+        ...(maxContinuationTurns !== undefined ? { maxContinuationTurns } : {}),
       });
       bindCreatedGoalContinuation({ ...scope, runId: options.runId, goalId: goal.id });
       return jsonResult({ status: "created", goal });

@@ -34,6 +34,7 @@ import {
 import type { InitializedUpdate } from "./update-command-initialization.js";
 import { preparePackageUpdateRuntime } from "./update-command-node-runtime.js";
 import { assertUpdatePackageActivationAdmission } from "./update-command-package-activation.js";
+import { withPinnedPackageUpdate } from "./update-command-package-target.js";
 import type { StagedPackageInstallUpdate } from "./update-command-package.js";
 import { UpdateCommandPendingRecoveryFailure } from "./update-command-result.js";
 import {
@@ -58,19 +59,21 @@ export async function updateCommand(
   inputOpts: UpdateCommandOptions,
   executorOptions?: UpdateCommandExecutorOptions,
 ): Promise<void> {
-  return await withSystemPackageOwnershipRun(() =>
-    withDeferredDebugProxyCapture(async () => {
-      const { tryRunImmutableUpdateCommand } = await import("./update-command-immutable.js");
-      if (await tryRunImmutableUpdateCommand(inputOpts)) {
-        return;
-      }
-      const { preparePostgresPoolForUpdate } = await import("../../infra/postgres-sync/pool.js");
-      await preparePostgresPoolForUpdate("openclaw update repair");
-      const { withRetainedUpdateRuntime } = await import("../../infra/update-retained-runtime.js");
-      return await withRetainedUpdateRuntime(import.meta.url, (retainRuntime) =>
-        updateCommandWithRuntime(inputOpts, retainRuntime, executorOptions),
-      );
-    }),
+  return await withPinnedPackageUpdate(inputOpts, (pinnedOpts) =>
+    withSystemPackageOwnershipRun(() =>
+      withDeferredDebugProxyCapture(async () => {
+        const { tryRunImmutableUpdateCommand } = await import("./update-command-immutable.js");
+        if (await tryRunImmutableUpdateCommand(pinnedOpts)) {
+          return;
+        }
+        const { preparePostgresPoolForUpdate } = await import("../../infra/postgres-sync/pool.js");
+        await preparePostgresPoolForUpdate("openclaw update repair");
+        const { withRetainedUpdateRuntime } = await import("../../infra/update-retained-runtime.js");
+        return await withRetainedUpdateRuntime(import.meta.url, (retainRuntime) =>
+          updateCommandWithRuntime(pinnedOpts, retainRuntime, executorOptions),
+        );
+      }),
+    ),
   );
 }
 

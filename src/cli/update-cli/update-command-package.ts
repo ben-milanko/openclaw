@@ -72,6 +72,7 @@ import { observeUpdateParentDatabaseWrites } from "./update-command-database-rec
 import { withUpdateDoctorChild } from "./update-command-doctor-child.js";
 import { createPackageUpdateDoctorCompletion } from "./update-command-doctor-completion.js";
 import { readPackageUpdateIdentity } from "./update-command-package-identity.js";
+import { assertPackageUpdateTargetIdentity } from "./update-command-package-target.js";
 import { resolveUpdateTargetEnv } from "./update-command-service-env.js";
 
 type PackageDoctorContext = {
@@ -375,6 +376,7 @@ export type PackageInstallUpdateParams = Omit<PackageDoctorOptions, "results"> &
   installKind: "git" | "package" | "unknown";
   tag: string;
   installSpec?: string;
+  packageTarget?: import("../../../packages/gateway-protocol/src/schema/config.js").PackageUpdateTarget;
   timeoutMs: number;
   startedAt: number;
   honorPackageRoot?: boolean;
@@ -549,7 +551,19 @@ export async function runPackageInstallUpdate(
       }),
     },
     validateCandidate: params.validateCandidate,
-    beforeVerifyCandidate: params.beforeVerifyCandidate,
+    beforeVerifyCandidate:
+      params.packageTarget || params.beforeVerifyCandidate
+        ? async (root) => {
+            if (params.packageTarget) {
+              try {
+                await assertPackageUpdateTargetIdentity(root, params.packageTarget);
+              } catch (error) {
+                throw new PackageUpdateActivationError(error);
+              }
+            }
+            await params.beforeVerifyCandidate?.(root);
+          }
+        : undefined,
     resolveLifecycleNodeRunner: params.resolveLifecycleNodeRunner ?? (() => params.nodeRunner),
     beforeActivate: params.beforeActivate,
     assertCurrent: params.assertCurrent,

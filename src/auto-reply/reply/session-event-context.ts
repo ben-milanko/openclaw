@@ -1,7 +1,9 @@
 import { resolveConfiguredAgentId } from "../../agents/agent-scope-config.js";
+import { withoutGatewayToolCallerIdentity } from "../../agents/tools/gateway-caller-context.js";
 import { getRuntimeConfigSnapshotMetadata } from "../../config/runtime-snapshot.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import type { SessionSourceAssertion } from "../../config/sessions/session-source-authority.js";
+import { runWithoutOwnedSessionTranscriptWrites } from "../../config/sessions/transcript-write-context-store.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { createCronExecutionId } from "../../cron/run-id.js";
 import { resolveCreatorSandbox } from "../../gateway/operator-role-policy.js";
@@ -19,6 +21,10 @@ import {
   enqueueRequiredSystemEventEntry,
 } from "../../infra/system-events.js";
 import { channelRouteTargetsMatchExact } from "../../plugin-sdk/channel-route.js";
+import {
+  getPluginRuntimeGatewayRequestScope,
+  withPluginRuntimeGatewayContextResolver,
+} from "../../plugins/runtime/gateway-request-scope.js";
 import { normalizeAccountId } from "../../routing/account-id.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
 import { CRON_EXECUTION_SOURCE_TOOL } from "../../sessions/input-provenance.js";
@@ -37,6 +43,18 @@ import {
   resolveSessionEventKey,
 } from "./session-event-target.js";
 import { setChannelSourceTurnId } from "./source-turn-id.js";
+
+/** Events retain explicit producer authority, not the launching request's ambient scope. */
+export function runWithSessionEventExecutionScope<T>(run: () => T): T {
+  const resolver = getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext;
+  return withoutGatewayToolCallerIdentity(() =>
+    withPluginRuntimeGatewayContextResolver(
+      resolver,
+      () => runWithoutOwnedSessionTranscriptWrites(run),
+      { inheritRequestScope: false },
+    ),
+  );
+}
 
 /** Prepare immutable producer context before the receipt acquires occurrence custody. */
 export function prepareSessionEventInput(text: string, options: SessionEventOptions) {

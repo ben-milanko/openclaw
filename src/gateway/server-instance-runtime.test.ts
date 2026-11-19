@@ -179,6 +179,7 @@ it("sends delivery notices through normal outbound without invoking plugin actio
   await withOpenClawTestState({ layout: "state-only", prefix: "recovery-notice-" }, async () => {
     let platformDispatchHold: Promise<void> | undefined;
     const visibleSend = vi.fn();
+    let allowRecoveryNotice = false;
     const sendText = vi.fn(async (ctx: { onPlatformSendDispatch?: () => Promise<void> }) => {
       await platformDispatchHold;
       await ctx.onPlatformSendDispatch?.();
@@ -194,6 +195,7 @@ it("sends delivery notices through normal outbound without invoking plugin actio
         label: "Signal",
         config: { listAccountIds: () => ["work"], isConfigured: () => true },
       }),
+      messaging: { allowRecoveryNotice: () => allowRecoveryNotice },
       actions: {
         describeMessageTool: () => ({ actions: ["send"] }),
         supportsAction: () => false,
@@ -226,6 +228,10 @@ it("sends delivery notices through normal outbound without invoking plugin actio
         text: "Recovery notice",
       };
       const notice = { channel: "signal", ...target, idempotencyKey };
+      expect(await runtime.lifecycle.sendNotice(notice)).toEqual({ suppressed: true });
+      expect(await findDeliveryIntentOwner(idempotencyKey)).toBeNull();
+      expect(sendText).not.toHaveBeenCalled();
+      allowRecoveryNotice = true;
       await runtime.lifecycle.sendNotice(notice);
       await runtime.lifecycle.sendNotice(notice);
 
@@ -264,6 +270,19 @@ it("sends delivery notices through normal outbound without invoking plugin actio
       await runtime.lifecycle.sendNotice(guardedDurableNotice);
       expect(visibleSend).toHaveBeenCalledTimes(2);
       await expectCompleted(guardedDurableNotice.idempotencyKey);
+      const platformPolicyDispatch = createDeferred();
+      platformDispatchHold = platformPolicyDispatch.promise;
+      const revokedNotice = runtime.lifecycle.sendNotice({
+        ...notice,
+        idempotencyKey: "main-session-restart-recovery:run-4:policy-revoked",
+        liveOnly: true,
+        isCurrent: () => true,
+      });
+      await vi.waitFor(() => expect(sendText).toHaveBeenCalledTimes(4));
+      allowRecoveryNotice = false;
+      platformPolicyDispatch.resolve();
+      await expect(revokedNotice).rejects.toThrow("Lifecycle notice owner retired before delivery");
+      expect(visibleSend).toHaveBeenCalledTimes(2);
     } finally {
       runtime.close();
       restoreActivePluginRegistrySnapshot(pluginRegistrySnapshot);

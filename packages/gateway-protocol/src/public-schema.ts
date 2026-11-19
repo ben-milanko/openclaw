@@ -643,6 +643,7 @@ export {
   ChatPendingInputsDismissParamsSchema,
   ChatPendingInputsDismissResultSchema,
   UpdateRunParamsSchema,
+  PackageUpdateTargetSchema,
   UpdateRunRecordSchema,
   UpdateRunResultSchema,
   UpdateRecoveryCleanupParamsSchema,

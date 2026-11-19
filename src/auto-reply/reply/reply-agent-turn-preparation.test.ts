@@ -31,6 +31,7 @@ const state = vi.hoisted(() => ({
   admitReply: vi.fn(),
   buildPreflightFailureText: vi.fn(),
   loadEntry: vi.fn(),
+  patchEntry: vi.fn(),
   queueDepth: vi.fn(() => 0),
   preflight: vi.fn(),
   recheckFallbackProbe: vi.fn(),
@@ -73,6 +74,11 @@ vi.mock("../../config/sessions/session-entry-read-runtime.js", () => ({
   readSessionEntryReadOnlyInWorker: async (...args: unknown[]) => state.loadEntry(...args),
 }));
 
+vi.mock("../../config/sessions/session-accessor.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../config/sessions/session-accessor.js")>()),
+  patchSessionEntryCore: (...args: unknown[]) => state.patchEntry(...args),
+}));
+
 // mock-isolation: Pending inputs are controlled independently of this admission.
 vi.mock("./queue/enqueue.js", () => ({
   getFollowupQueueDepth: () => state.queueDepth(),
@@ -107,6 +113,17 @@ beforeEach(() => {
   vi.clearAllMocks();
   operation = createOperation();
   admit(operation);
+  state.patchEntry.mockImplementation(async (_scope, update, options) => {
+    options.workerGuard.assertMutationAllowed();
+    const entry = state.loadEntry();
+    const patch = await update(entry, { existingEntry: entry });
+    if (!patch) {
+      return null;
+    }
+    const updated = { ...entry, ...patch };
+    state.loadEntry.mockReturnValue(updated);
+    return updated;
+  });
   state.queueDepth.mockReturnValue(0);
   state.sendPolicy = "allow";
   state.shouldNotifyCompaction = false;
@@ -242,7 +259,7 @@ function createActiveGoalEntry(): SessionEntry {
   return {
     sessionId: "queued-session",
     updatedAt: 1,
-    goal: createSessionGoalFixture("goal", "Finish"),
+    goal: { ...createSessionGoalFixture("goal", "Finish"), maxContinuationTurns: 3 },
   };
 }
 
@@ -394,6 +411,8 @@ it.each([
   "replaced",
   "cleared",
   "new input",
+  "manual",
+  "turn limit",
   "paused during preflight",
 ] as const)("drops an automatic Goal nudge when admission observes %s", async (change) => {
   const original = createActiveGoalEntry();
@@ -406,6 +425,10 @@ it.each([
     current.goal = undefined;
   } else if (change === "new input") {
     state.queueDepth.mockReturnValue(1);
+  } else if (change === "manual") {
+    delete current.goal!.maxContinuationTurns;
+  } else if (change === "turn limit") {
+    current.goal!.continuationTurns = 3;
   } else if (change === "paused during preflight") {
     state.preflight.mockImplementation(async () => {
       current = {
@@ -433,6 +456,35 @@ it.each([
   expect(onQueuedFollowupSettled).toHaveBeenCalledOnce();
   expect(operation.complete).not.toHaveBeenCalled();
   expect(state.preflight).toHaveBeenCalledTimes(change === "paused during preflight" ? 1 : 0);
+});
+
+it("claims a bounded Goal lifetime slot before handing the turn to execution", async () => {
+  const entry = createActiveGoalEntry();
+  admit(operation, entry);
+  state.loadEntry.mockReturnValue(entry);
+  const turn = await admitted(prepare(
+    createRun({ goalContinuation: { sessionId: "queued-session", goalId: "goal" } }),
+    { sessionEntry: entry, storePath: "/fixture/sessions.json" },
+  ));
+  expect(state.patchEntry).toHaveBeenCalledOnce();
+  expect(turn.session.current()?.goal).toMatchObject({ maxContinuationTurns: 3, continuationTurns: 1 });
+});
+
+it("does not admit a Goal whose lifetime limit was consumed before its writer claim", async () => {
+  const entry = createActiveGoalEntry();
+  admit(operation, entry);
+  state.loadEntry.mockReturnValue(entry);
+  state.patchEntry.mockImplementationOnce(async (_scope, update, options) => {
+    options.workerGuard.assertMutationAllowed();
+    const current = { ...entry, goal: { ...entry.goal!, continuationTurns: 3 } };
+    expect(await update(current, { existingEntry: current })).toBeNull();
+    return null;
+  });
+  const result = await prepare(
+    createRun({ goalContinuation: { sessionId: "queued-session", goalId: "goal" } }),
+    { sessionEntry: entry, storePath: "/fixture/sessions.json" },
+  );
+  expect(result).toMatchObject({ kind: "skipped", reason: "goal-inactive", operation });
 });
 
 it("preserves the admitted legacy transcript target", async () => {
