@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import os
@@ -12,14 +13,37 @@ source = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(
 tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
 assert source == os.environ['EXPECTED_SOURCE'] and tree == os.environ['EXPECTED_TREE']
 assert not subprocess.check_output(['git', 'status', '--porcelain'], text=True).strip()
-with (out / 'pack.stdout').open('wb') as stdout, (out / 'pack.stderr').open('wb') as stderr:
-    result = subprocess.run(['node', '--import', './scripts/tsx.mjs', 'scripts/lib/plugin-npm-build-and-pack.mts', 'extensions/codex', str(out)], stdout=stdout, stderr=stderr)
-(out / 'pack.exit').write_text(str(result.returncode) + '\n')
-assert result.returncode == 0, 'Canonical plugin build/pack failed; original logs retained'
-packed = json.loads((out / 'pack.stdout').read_text())
+reused_run = os.environ.get('REUSE_PLUGIN_BUILD_RUN')
+if reused_run:
+    assert reused_run == '44528424693'
+    build_exit = int((out / 'pack.exit').read_text())
+    with (out / 'openclaw-codex-2026.11.5.tgz').open('rb') as stream:
+        assert hashlib.file_digest(stream, 'sha256').hexdigest() == os.environ['EXPECTED_PLUGIN_SHA']
+else:
+    with (out / 'pack.stdout').open('wb') as stdout, (out / 'pack.stderr').open('wb') as stderr:
+        result = subprocess.run(['node', '--import', './scripts/tsx.mjs', 'scripts/lib/plugin-npm-build-and-pack.mts', 'extensions/codex', str(out)], stdout=stdout, stderr=stderr)
+    build_exit = result.returncode
+    (out / 'pack.exit').write_text(str(build_exit) + '\n')
+assert build_exit == 0, 'Canonical plugin build/pack failed; original logs retained'
+# Canonical tsdown reports progress on stdout before npm's terminal JSON array.
+# Accept one complete terminal npm report, never a substring hiding a failed exit.
+reports = []
+lines = (out / 'pack.stdout').read_text().splitlines(keepends=True)
+for index, line in enumerate(lines):
+    if line.strip() != '[':
+        continue
+    try:
+        value = json.loads(''.join(lines[index:]))
+    except ValueError:
+        continue
+    if isinstance(value, list) and len(value) == 1 and value[0].get('name') == '@openclaw/codex':
+        reports.append(value)
+assert len(reports) == 1, 'Missing unambiguous terminal npm JSON report'
+packed = reports[0]
 assert len(packed) == 1 and packed[0]['name'] == '@openclaw/codex' and packed[0]['version'] == '2026.11.5'
 archive = out / packed[0]['filename']
 assert archive.name == 'openclaw-codex-2026.11.5.tgz' and archive.stat().st_size < 128 * 1024**2
+assert 'sha512-' + base64.b64encode(hashlib.sha512(archive.read_bytes()).digest()).decode() == packed[0]['integrity']
 port_files = []
 with tarfile.open(archive) as package:
     names = set()
@@ -54,7 +78,7 @@ target = out / 'openclaw-codex-2026.11.5-ben-f16ac416.tgz'
 archive.rename(target)
 with target.open('rb') as stream:
     digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-receipt = {'status':'verified','scope':'Canonical standalone operator Codex archive only; no official provenance/live install/consent/inference acceptance','sourceCommit':source,'sourceTree':tree,'version':'2026.11.5','packageName':'@openclaw/codex','archiveFile':target.name,'sha256':digest,'bytes':target.stat().st_size,'npmIntegrity':packed[0]['integrity'],'originalBuildPackExit':result.returncode,'canonicalCapabilityDiffExit':cap.returncode,'customTerminalPortFiles':port_files,'oldOperatorArchiveSha256':inputs['archiveSha256'],'runId':os.environ['GITHUB_RUN_ID'],'runAttempt':os.environ['GITHUB_RUN_ATTEMPT']}
+receipt = {'status':'verified','scope':'Canonical standalone operator Codex archive only; no official provenance/live install/consent/inference acceptance','sourceCommit':source,'sourceTree':tree,'version':'2026.11.5','packageName':'@openclaw/codex','archiveFile':target.name,'sha256':digest,'bytes':target.stat().st_size,'npmIntegrity':packed[0]['integrity'],'originalBuildPackExit':build_exit,'originalBuildRunId':reused_run or os.environ['GITHUB_RUN_ID'],'canonicalCapabilityDiffExit':cap.returncode,'customTerminalPortFiles':port_files,'oldOperatorArchiveSha256':inputs['archiveSha256'],'verificationRunId':os.environ['GITHUB_RUN_ID'],'runAttempt':os.environ['GITHUB_RUN_ATTEMPT']}
 (out / 'plugin-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
 assert not subprocess.check_output(['git', 'status', '--porcelain'], text=True).strip()
 print(json.dumps(receipt))

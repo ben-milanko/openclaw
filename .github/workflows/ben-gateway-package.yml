@@ -17,6 +17,8 @@ jobs:
     env:
       EXPECTED_SOURCE: f16ac416701def17fccb025f3fddf7fe802b1b78
       EXPECTED_TREE: ebd488aa150b05f1d5fbcd7bd95eccc44564184c
+      REUSE_PLUGIN_BUILD_RUN: "44528424693"
+      EXPECTED_PLUGIN_SHA: 1e41770cd22dd9545b31b9955c5b5d5f8895f349ae5c86524fcd71c4eb6d48ad
       NODE_OPTIONS: --max-old-space-size=6144
       GOMEMLIMIT: 4GiB
       GOMAXPROCS: "2"
@@ -71,13 +73,15 @@ jobs:
         run: |
           set -euo pipefail
           gh run download 44497411879 --name ben-gateway-2026.11.5-44497411879-1 --dir "$RUNNER_TEMP/ben-codex/core"
+          gh run download 44528424693 --name ben-custom-codex-44528424693-1 --dir "$RUNNER_TEMP/ben-codex"
+          gh run download 44528424693 --name ben-codex-diagnostics-44528424693-1 --dir "$RUNNER_TEMP/ben-codex"
           python3 - <<'PYTHON'
           import hashlib, os
           from pathlib import Path
           p=Path(os.environ['RUNNER_TEMP'],'ben-codex/core/openclaw-2026.11.5-ben-f16ac416.tgz')
           with p.open('rb') as stream: assert hashlib.file_digest(stream,'sha256').hexdigest()=='d97f2e26b71686080d15fa4f989a6f07438f1dfda66bcea58ba8fd91d96834e8'
           PYTHON
-      - name: Canonical standalone plugin build and capability verification
+      - name: Verify preserved canonical plugin and capability surface
         shell: bash
         run: python3 "$RUNNER_TEMP/ben-codex-controller/pack.py"
       - name: Retain archive independently of cache qualification
