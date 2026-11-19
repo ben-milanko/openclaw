@@ -1,98 +1,120 @@
-name: Ben Gateway preserved boundary checks
-
+name: Ben matching custom Codex package
 on:
   push:
     branches: ["ci/ben-gateway-package-*"]
-    paths: [.github/workflows/ben-gateway-package.yml]
-
+    paths: [.github/workflows/ben-gateway-package.yml, .github/ben-codex/**]
 permissions:
   contents: read
-
+  actions: read
 concurrency:
   group: ben-gateway-package-${{ github.ref }}
   cancel-in-progress: false
-
 jobs:
-  preserved-boundaries:
+  matching-codex:
     if: github.repository == 'ben-milanko/openclaw'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       EXPECTED_SOURCE: f16ac416701def17fccb025f3fddf7fe802b1b78
       EXPECTED_TREE: ebd488aa150b05f1d5fbcd7bd95eccc44564184c
-      PROTOCOL_SINCE_BASE_SHA: e13cf15ece9bbd969b7362927c315362c90c97ff
+      NODE_OPTIONS: --max-old-space-size=6144
       GOMEMLIMIT: 4GiB
       GOMAXPROCS: "2"
       GOGC: "100"
-      NODE_OPTIONS: --max-old-space-size=6144
     steps:
-      - name: Checkout pinned package source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Capture exact controller tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: ben-milanko/openclaw
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Freeze controller outside candidate source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          cp -a .github/ben-codex "$RUNNER_TEMP/ben-codex-controller"
+      - name: Checkout already reviewed exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
           ref: f16ac416701def17fccb025f3fddf7fe802b1b78
           persist-credentials: false
-          fetch-depth: 32
-
-      - name: Verify source and runner capacity
+          fetch-depth: 1
+      - name: Verify source and ordinary free runner
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
           test "$(git rev-parse 'HEAD^{tree}')" = "$EXPECTED_TREE"
           test -z "$(git status --porcelain)"
-          mkdir "$RUNNER_TEMP/ben-preserved-boundaries"
+          mkdir "$RUNNER_TEMP/ben-codex"
           python3 - <<'PYTHON'
-          import json, os, shutil
+          import os, shutil
           from pathlib import Path
-          memory = dict(line.split(':', 1) for line in Path('/proc/meminfo').read_text().splitlines())
-          available = int(memory['MemAvailable'].split()[0]) * 1024
-          free = shutil.disk_usage(os.environ['RUNNER_TEMP']).free
-          Path(os.environ['RUNNER_TEMP'], 'ben-preserved-boundaries', 'runner.json').write_text(json.dumps({
-              'availableMemoryBytes': available, 'freeDiskBytes': free, 'cpuCount': os.cpu_count(),
-          }, indent=2) + '\n')
-          assert available >= 12 * 1024**3, 'Runner needs at least 12 GiB available RAM'
-          assert free >= 20 * 1024**3, 'Runner needs at least 20 GiB free disk'
+          available = int(dict(line.split(':',1) for line in Path('/proc/meminfo').read_text().splitlines())['MemAvailable'].split()[0])*1024
+          assert available >= 12*1024**3
+          assert shutil.disk_usage(os.environ['RUNNER_TEMP']).free >= 20*1024**3
+          assert os.getuid()!=0
           PYTHON
-
-      - name: Set up pinned package toolchain
+      - name: Set up pinned canonical toolchain
         uses: ./.github/actions/setup-node-env
         with:
           node-version: 26.12.1
           install-bun: "false"
           cache-mode: "off"
           semantic-checks: "true"
-
-      - name: Set up checksum-pinned test runtime
-        uses: ./.github/actions/setup-test-bun
-
-      - name: Preserved upstream and adjacent boundary tests
+      - name: Reuse verified core artifact without rebuilding
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ben-milanko/openclaw
         shell: bash
         run: |
           set -euo pipefail
+          gh run download 44497411879 --name ben-gateway-2026.11.5-44497411879-1 --dir "$RUNNER_TEMP/ben-codex/core"
           python3 - <<'PYTHON'
-          import json, os, subprocess
+          import hashlib, os
           from pathlib import Path
-          root = Path(os.environ['RUNNER_TEMP'], 'ben-preserved-boundaries')
-          tests = ['src/plugins/services.nodes.test.ts', 'src/process/spawn-broker/host-transport-retirement.test.ts', 'test/scripts/native-declaration-boundary.test.ts', 'test/scripts/tsdown-config.test.ts', 'test/scripts/tsdown-declaration-resolution.test.ts', 'src/config/sessions/goals-operation-policy.test.ts', 'src/agents/harness/host-capability.scheduled-targets.test.ts', 'src/agents/harness/host-capability.scheduled-projection.test.ts', 'src/agents/openclaw-tools.scheduled-targets.test.ts']
-          (root / 'selected-tests.json').write_text(json.dumps(tests, indent=2) + '\n')
-          result = subprocess.run(['node', 'scripts/run-vitest.mjs', *tests, '--maxWorkers=1'])
-          (root / 'tests.exit').write_text(str(result.returncode) + '\n')
-          (root / 'proof.json').write_text(json.dumps({
-              'scope': 'Supplemental exact-source tests only; no package build, installation or activation',
-              'sourceCommit': os.environ['EXPECTED_SOURCE'], 'sourceTree': os.environ['EXPECTED_TREE'],
-              'originalTestExit': result.returncode, 'tests': tests,
-              'runId': os.environ['GITHUB_RUN_ID'], 'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
-          }, indent=2) + '\n')
-          raise SystemExit(result.returncode)
+          p=Path(os.environ['RUNNER_TEMP'],'ben-codex/core/openclaw-2026.11.5-ben-f16ac416.tgz')
+          with p.open('rb') as stream: assert hashlib.file_digest(stream,'sha256').hexdigest()=='d97f2e26b71686080d15fa4f989a6f07438f1dfda66bcea58ba8fd91d96834e8'
           PYTHON
-          test -z "$(git status --porcelain)"
-
-      - name: Retain preserved-boundary proof and diagnostics
+      - name: Canonical standalone plugin build and capability verification
+        shell: bash
+        run: python3 "$RUNNER_TEMP/ben-codex-controller/pack.py"
+      - name: Retain archive independently of cache qualification
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: ben-gateway-preserved-boundaries-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/ben-preserved-boundaries/
+          name: ben-custom-codex-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ben-codex/*.tgz
+            ${{ runner.temp }}/ben-codex/plugin-receipt.json
+            ${{ runner.temp }}/ben-codex/capability-diff.json
+            ${{ runner.temp }}/ben-codex/packed-manifest.json
+            ${{ runner.temp }}/ben-codex/packed-package.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Qualify fresh native disabled installs and public code cache
+        shell: bash
+        run: python3 "$RUNNER_TEMP/ben-codex-controller/qualify-cache.py"
+      - name: Retain qualified paired offline cache
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ben-paired-offline-cache-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ben-codex/paired-offline-npm-cacache.tar
+            ${{ runner.temp }}/ben-codex/paired-offline-cache-receipt.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain original diagnostics and numeric outcomes
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ben-codex-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ben-codex/*.stdout
+            ${{ runner.temp }}/ben-codex/*.stderr
+            ${{ runner.temp }}/ben-codex/*.exit
+            ${{ runner.temp }}/ben-codex/cache-phases.json
+            ${{ runner.temp }}/ben-codex/old-inputs.json
           if-no-files-found: ignore
           retention-days: 14
