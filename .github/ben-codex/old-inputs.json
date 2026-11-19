@@ -1,0 +1,61 @@
+{
+  "archiveSha256": "b6b3697e2f90e827b22111e197218375253014be93f70a1b9ac3478a6b544c0c",
+  "version": "2026.11.2",
+  "runtimeDependencies": {
+    "dependencies": {
+      "@openai/codex": "0.164.0",
+      "@openclaw/fs-safe": "0.26.5",
+      "semver": "7.8.5",
+      "smol-toml": "1.9.0",
+      "typebox": "1.3.35",
+      "ws": "8.22.0",
+      "zod": "4.6.5"
+    }
+  },
+  "capabilityManifest": {
+    "providers": [
+      "codex"
+    ],
+    "contracts": {
+      "mediaUnderstandingProviders": [
+        "codex"
+      ],
+      "migrationProviders": [
+        "codex"
+      ],
+      "tools": [
+        "codex_threads",
+        "codex_plugins",
+        "codex_endpoint_probe",
+        "codex_sessions_list",
+        "codex_session_read",
+        "codex_session_send",
+        "codex_session_interrupt"
+      ],
+      "webSearchProviders": [
+        "codex"
+      ]
+    },
+    "cliCommands": [
+      {
+        "name": "codex",
+        "description": "Inspect and branch from Codex sessions through the Gateway",
+        "hasSubcommands": true
+      }
+    ],
+    "configContracts": {
+      "secretInputs": {
+        "paths": [
+          {
+            "path": "appServer.authToken",
+            "expected": "string"
+          },
+          {
+            "path": "appServer.headers.*",
+            "expected": "string"
+          }
+        ]
+      }
+    }
+  }
+}
