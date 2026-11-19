@@ -13,157 +13,181 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  package:
+  prepare:
     if: github.repository == 'ben-milanko/openclaw'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      EXPECTED_SOURCE: 07684f40ee80fb7f09860e2a338fd9a8f3cfbdaf
-      EXPECTED_TREE: ad27e38e704812b347dba263a0d115ec1f3504da
+      EXPECTED_SOURCE: 2643eb8d4d442e9d155c3180a71eaa8ad21b8f50
+      EXPECTED_TREE: 0c8c29f0deedb321cf4aa7df65cdae7205af4ed9
+      UPSTREAM_SOURCE: e13cf15ece9bbd969b7362927c315362c90c97ff
       GOMEMLIMIT: 4GiB
       GOMAXPROCS: "2"
       GOGC: "100"
       NODE_OPTIONS: --max-old-space-size=6144
-      OPENCLAW_DOCKER_PACKAGE_BUILD_TIMEOUT_MS: "5400000"
     steps:
-      # The PR changes this workflow; package bytes come only from the pinned stable backport.
-      - name: Checkout pinned package source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout exact candidate source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ben-milanko/openclaw
-          ref: 07684f40ee80fb7f09860e2a338fd9a8f3cfbdaf
+          ref: 2643eb8d4d442e9d155c3180a71eaa8ad21b8f50
           persist-credentials: false
           fetch-depth: 2
 
-      - name: Verify source and runner capacity
+      - name: Verify frozen inputs and runner capacity
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
           test "$(git rev-parse 'HEAD^{tree}')" = "$EXPECTED_TREE"
           test -z "$(git status --porcelain)"
-          mkdir "$RUNNER_TEMP/ben-package"
+          mkdir "$RUNNER_TEMP/ben-preparation"
           python3 - <<'PYTHON'
           import json, os, shutil
           from pathlib import Path
           memory = dict(line.split(':', 1) for line in Path('/proc/meminfo').read_text().splitlines())
           available = int(memory['MemAvailable'].split()[0]) * 1024
           free = shutil.disk_usage(os.environ['RUNNER_TEMP']).free
-          Path(os.environ['RUNNER_TEMP'], 'ben-package', 'runner.json').write_text(json.dumps({
+          Path(os.environ['RUNNER_TEMP'], 'ben-preparation', 'runner.json').write_text(json.dumps({
               'availableMemoryBytes': available, 'freeDiskBytes': free, 'cpuCount': os.cpu_count(),
           }, indent=2) + '\n')
-          assert available >= 12 * 1024**3, 'Runner needs at least 12 GiB available RAM'
-          assert free >= 20 * 1024**3, 'Runner needs at least 20 GiB free disk'
+          assert available >= 12 * 1024**3
+          assert free >= 20 * 1024**3
           PYTHON
 
-      - name: Set up pinned package toolchain
+      - name: Set up pinned isolated check toolchain
         uses: ./.github/actions/setup-node-env
         with:
           node-version: 26.12.1
           install-bun: "false"
           cache-mode: "off"
+          semantic-checks: "true"
 
-      - name: Prove completion request-lifetime regression
+      - name: Set up checksum-pinned test runtime
+        uses: ./.github/actions/setup-test-bun
+
+      - name: Generate canonical metadata and snapshots; format changed source
+        id: generate
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.cache/openclaw-completion-tests"
-          chmod 700 "$HOME/.cache/openclaw-completion-tests"
-          export TMPDIR="$HOME/.cache/openclaw-completion-tests" SQLITE_TMPDIR="$HOME/.cache/openclaw-completion-tests"
-          context_source=src/auto-reply/reply/session-event-context.ts
-          handoff_source=src/auto-reply/reply/session-event-handoff.ts
-          trap 'git restore --source=HEAD -- "$context_source" "$handoff_source"' EXIT
-          git show "HEAD^:$context_source" > "$context_source"
-          git show "HEAD^:$handoff_source" > "$handoff_source"
-          set +e
-          FS_MODULE_CACHE_PATH="$RUNNER_TEMP/ben-package/regression-before-cache.json" \
-            node scripts/run-vitest.mjs src/auto-reply/reply/session-event-handoff.test.ts \
-            --maxWorkers=1 --testNamePattern 'starts a completion after' \
-            > "$RUNNER_TEMP/ben-package/regression-before.log" 2>&1
-          baseline_exit=$?
-          set -e
-          git restore --source=HEAD -- "$context_source" "$handoff_source"
-          trap - EXIT
-          test "$baseline_exit" -eq 1
-          grep -F 'Gateway caller authority is no longer active' "$RUNNER_TEMP/ben-package/regression-before.log"
-          FS_MODULE_CACHE_PATH="$RUNNER_TEMP/ben-package/regression-after-cache.json" \
-            node scripts/run-vitest.mjs src/auto-reply/reply/session-event-handoff.test.ts \
-            --maxWorkers=1 2>&1 | tee "$RUNNER_TEMP/ben-package/regression-after.log"
-          node scripts/run-tsgo.mjs -p test/tsconfig/tsconfig.core.test.infra.json --incremental --declaration false
-          test -z "$(git status --porcelain)"
+          pnpm config:channels:gen
+          pnpm prompt:snapshots:gen
+          python3 - <<'PYTHON'
+          import json, os, subprocess
+          from pathlib import Path
+          changed = subprocess.check_output(['git', 'diff', '--name-only', os.environ['UPSTREAM_SOURCE']], text=True).splitlines()
+          files = [name for name in changed if Path(name).is_file()]
+          subprocess.run(['pnpm', 'format', *files], check=True)
+          root = Path(os.environ['RUNNER_TEMP'], 'ben-preparation')
+          (root / 'changed-files.json').write_text(json.dumps(files, indent=2) + '\n')
+          patch = subprocess.check_output(['git', 'diff', '--binary', 'HEAD'])
+          (root / 'generated-and-format.patch').write_bytes(patch)
+          subprocess.run(['git', 'diff', '--check'], check=True)
+          PYTHON
 
-      - name: Check production types
-        shell: bash
-        run: |
-          set -euo pipefail
-          pnpm tsgo:core
-          pnpm tsgo:ui
-          pnpm tsgo:extensions
-
-      - name: Check integration typed lint
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --import ./scripts/tsx.mjs scripts/run-oxlint.mts --type-aware --tsconfig config/tsconfig/oxlint.core.json src/cli/update-cli/update-command-execution.ts src/infra/update-managed-service-handoff.ts src/infra/backup-sqlite-snapshot.ts src/infra/update-database-engine-admission.test.ts src/cli/update-cli/update-command-package-target.ts src/cli/update-cli/update-command-package-target.test.ts src/auto-reply/reply/session-event-context.ts src/auto-reply/reply/session-event-handoff.ts src/auto-reply/reply/session-event-handoff.test.ts
-          node --import ./scripts/tsx.mjs scripts/run-oxlint.mts --type-aware --tsconfig config/tsconfig/oxlint.scripts.json test/scripts/tsdown-declaration-resolution.test.ts
-
-      - name: Build and check canonical package
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(node --version)" = v26.12.1
-          test "$(pnpm --version)" = 12.15.0
-          node scripts/package-openclaw-for-docker.mjs \
-            --output-dir "$RUNNER_TEMP/ben-package" \
-            --output-name openclaw-2026.11.3-ben-07684f40.tgz \
-            2>&1 | tee "$RUNNER_TEMP/ben-package/build.log"
-          test -z "$(git status --porcelain)"
-
-      - name: Verify packaged identity and retain digest
+      - name: Focused custom boundary and owning sibling tests
+        id: tests
+        if: success()
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PYTHON'
-          import hashlib, json, os, tarfile
+          import json, os, subprocess
           from pathlib import Path
-          root = Path(os.environ['RUNNER_TEMP'], 'ben-package')
-          archive = root / 'openclaw-2026.11.3-ben-07684f40.tgz'
-          with tarfile.open(archive) as package:
-              manifest = json.load(package.extractfile('package/package.json'))
-              build = json.load(package.extractfile('package/dist/build-info.json'))
-          assert manifest['version'] == build['version'] == '2026.11.3'
-          assert manifest['openclaw']['schemaVersions'] == {'state': 22, 'agent': 27}
-          assert build['commit'] == os.environ['EXPECTED_SOURCE']
-          assert isinstance(build.get('buildId'), str) and build['buildId']
-          with archive.open('rb') as stream:
-              digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-          (root / 'package-receipt.json').write_text(json.dumps({
-              'sourceCommit': os.environ['EXPECTED_SOURCE'], 'sourceTree': os.environ['EXPECTED_TREE'],
-              'archive': archive.name, 'sha256': digest, 'build': build,
-              'runId': os.environ['GITHUB_RUN_ID'], 'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
-              'scope': 'Candidate only; no deployment, release publication or external plugin activation',
-          }, indent=2) + '\n')
+          root = Path(os.environ['RUNNER_TEMP'], 'ben-preparation')
+          changed = subprocess.check_output(['git', 'diff', '--name-only', os.environ['UPSTREAM_SOURCE']], text=True).splitlines()
+          selected = {name for name in changed if name.endswith('.test.ts') and Path(name).is_file()}
+          selected.update(name for name in [
+              'src/plugins/registry.factory-bindings.test.ts',
+              'src/agents/tools/cron-tool.schema.test.ts',
+              'src/agents/tools/cron-tool-creator-cap.test.ts',
+              'src/agents/exec-tool-target-pinning.test.ts',
+              'src/infra/update-database-engine-admission.test.ts',
+              'src/cli/update-cli/update-command-package.test.ts',
+              'src/auto-reply/reply/agent-runner-result-accounting.test.ts',
+          ] if Path(name).is_file())
+          selected.update(str(name) for name in Path('src/gateway').glob('server.chat-goal*.test.ts'))
+          files = sorted(selected)
+          (root / 'selected-tests.json').write_text(json.dumps(files, indent=2) + '\n')
+          result = subprocess.run(['node', 'scripts/run-vitest.mjs', *files, '--maxWorkers=1'])
+          (root / 'tests.exit').write_text(str(result.returncode) + '\n')
+          raise SystemExit(result.returncode)
           PYTHON
 
-      - name: Upload verified candidate
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - name: Production type checks
+        id: types
+        if: always() && steps.generate.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm tsgo:prod
+
+      - name: Typed lint for exact changed source
+        id: lint
+        if: always() && steps.generate.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import os, subprocess
+          from pathlib import Path
+          changed = subprocess.check_output(['git', 'diff', '--name-only', os.environ['UPSTREAM_SOURCE']], text=True).splitlines()
+          groups = [
+              ('config/tsconfig/oxlint.core.json', ('src/', 'ui/', 'packages/')),
+              ('extensions/tsconfig.json', ('extensions/',)),
+          ]
+          failures = []
+          for config, prefixes in groups:
+              paths = [name for name in changed if name.startswith(prefixes) and name.endswith(('.ts', '.mts', '.mjs', '.tsx')) and Path(name).is_file()]
+              if paths:
+                  result = subprocess.run(['node', 'scripts/run-oxlint.mjs', '--type-aware', '--tsconfig', config, *paths])
+                  if result.returncode:
+                      failures.append((config, result.returncode))
+          raise SystemExit(1 if failures else 0)
+          PYTHON
+
+      - name: Verify canonical generator and formatter readback
+        id: readback
+        if: always() && steps.generate.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm config:channels:check
+          pnpm prompt:snapshots:check
+          python3 - <<'PYTHON'
+          import json, os, subprocess
+          from pathlib import Path
+          files = json.loads(Path(os.environ['RUNNER_TEMP'], 'ben-preparation', 'changed-files.json').read_text())
+          subprocess.run(['pnpm', 'format:check', *files], check=True)
+          PYTHON
+
+      - name: Retain exact preparation outputs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: ben-gateway-2026.11.3-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/ben-package/openclaw-2026.11.3-ben-07684f40.tgz
-            ${{ runner.temp }}/ben-package/package-receipt.json
+          name: ben-gateway-115-preparation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ben-preparation/
           if-no-files-found: error
           retention-days: 14
 
-      - name: Retain build diagnostics
+      - name: Require all preparation layers
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: ben-gateway-build-log-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/ben-package/build.log
-            ${{ runner.temp }}/ben-package/runner.json
-            ${{ runner.temp }}/ben-package/regression-before.log
-            ${{ runner.temp }}/ben-package/regression-after.log
-          if-no-files-found: ignore
-          retention-days: 14
+        env:
+          GENERATE: ${{ steps.generate.outcome }}
+          TESTS: ${{ steps.tests.outcome }}
+          TYPES: ${{ steps.types.outcome }}
+          LINT: ${{ steps.lint.outcome }}
+          READBACK: ${{ steps.readback.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GENERATE" = success
+          test "$TESTS" = success
+          test "$TYPES" = success
+          test "$LINT" = success
+          test "$READBACK" = success
