@@ -271,7 +271,7 @@ describe("typed Goal operation persistence", () => {
       result: first.sessionTurnMutationResult?.result,
       replayed: true,
     });
-    expect(replay.appendedCount).toBe(0);
+    expect(replay.messages.filter((m) => m.appended)).toHaveLength(0);
     await expect(admit({ ...operation, maxContinuationTurns: 2 })).rejects.toMatchObject({
       code: "operation-conflict",
     });

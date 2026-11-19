@@ -195,15 +195,17 @@ describe("automation management history through the agent tool and Gateway route
         async (_identity, admitted, scope) =>
           withHistoryGateway(admitted, context, async () => {
             const readRecords = historyStore.readCronRunHistoryRecords;
-            vi.spyOn(historyStore, "readCronRunHistoryRecords").mockImplementationOnce(async (...args) => {
-              const records = await readRecords(...args);
-              if (invalidation === "revocation") {
-                revokeCronCreatorAuthorityRunScope(expectDefined(scope, "management scope"));
-              } else {
-                vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
-              }
-              return records;
-            });
+            vi.spyOn(historyStore, "readCronRunHistoryRecords").mockImplementationOnce(
+              async (...args) => {
+                const records = await readRecords(...args);
+                if (invalidation === "revocation") {
+                  revokeCronCreatorAuthorityRunScope(expectDefined(scope, "management scope"));
+                } else {
+                  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
+                }
+                return records;
+              },
+            );
             await expect(
               createCronTool({ runId, agentSessionKey: SESSION }).execute("history", {
                 action: "runs",

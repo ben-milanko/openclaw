@@ -226,11 +226,15 @@ export function registerWorkerGoalChatCases(
       );
       const prepared = createDeferred();
       const promote = createDeferred();
-      const request = createGoalChatStartRequest(
+      const baseRequest = createGoalChatStartRequest(
         scope(),
         "Finish a native worker checklist",
         randomUUID(),
       );
+      const request = {
+        ...baseRequest,
+        intent: { ...baseRequest.intent, maxContinuationTurns: 3 },
+      };
       const profile = ensureProfileForEmail("worker-goal@example.test");
       const operator = {
         ...client,
