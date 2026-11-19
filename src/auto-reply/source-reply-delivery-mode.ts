@@ -1,6 +1,7 @@
 /** Visible-reply ownership and presentation guidance shared with agent harnesses. */
 import { hasMessageToolSourceConversation } from "../agents/tools/message-tool-discovery.js";
 import { buildUiPresentationPrompt } from "../agents/ui-presentation-prompt.js";
+import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
 
 /**
  * True when the visible source reply must flow through the message tool, either
@@ -34,12 +35,18 @@ export function buildMessageToolFinalityGuidance(
 export function buildHarnessVisibleReplyGuidance(params: {
   sourceReplyDeliveryMode?: string;
   messageToolAvailable: boolean;
-  currentConversation: NonNullable<Parameters<typeof hasMessageToolSourceConversation>[0]>;
+  currentConversation?: NonNullable<Parameters<typeof hasMessageToolSourceConversation>[0]>;
   requireExplicitMessageTarget?: boolean;
   messageToolFinalByDefault?: boolean;
   uiPresentation?: Parameters<typeof buildUiPresentationPrompt>[0];
 }): string {
-  if (!hasMessageToolSourceConversation(params.currentConversation)) {
+  // Explicit modern caller context always wins, including an empty conversation.
+  // The fallback keeps released three-argument SDK callers compatible without
+  // turning ambient identity or a descriptive prompt into delivery authority.
+  const currentConversation =
+    params.currentConversation ??
+    getPluginRuntimeGatewayRequestScope()?.readHarnessSourceConversation?.();
+  if (!hasMessageToolSourceConversation(currentConversation)) {
     return [
       "This turn has no current conversation. Reply normally in your final assistant message; OpenClaw delivers your final response automatically to the caller.",
       params.messageToolAvailable ? buildMessageToolTargetGuidance(true) : undefined,

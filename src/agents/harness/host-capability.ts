@@ -101,6 +101,14 @@ export function createAgentHarnessHostCapabilities(params: {
   runWithScope: <T>(run: () => Promise<T>) => Promise<T>;
 } {
   const attempt = params.attempt;
+  // Released harnesses may omit the newer reply-guidance argument. Capture only
+  // descriptive source facts before plugin handoff; this is not send authority.
+  const sourceConversation = Object.freeze({
+    agentSessionKey: attempt.sessionKey,
+    currentChannelProvider: attempt.messageChannel ?? attempt.messageProvider,
+    currentChannelId: attempt.currentChannelId,
+    currentMessagingTarget: attempt.currentMessagingTarget,
+  });
   const prepareContinuationRetryCount = attempt.prepareContinuationRetryCount;
   const requestCustody = captureExecRequestCustody(attempt);
   // Capture authority by value before any plugin handoff can mutate the attempt.
@@ -711,6 +719,14 @@ export function createAgentHarnessHostCapabilities(params: {
             isWebchatConnect: () => false,
             ...getPluginRuntimeGatewayRequestScope(),
             ...nodeAuthorities,
+            readHarnessSourceConversation: () => {
+              try {
+                assertActive();
+                return sourceConversation;
+              } catch {
+                return undefined;
+              }
+            },
           },
           run,
         );
