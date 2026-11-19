@@ -1,8 +1,8 @@
-import type { PackageUpdateTarget } from "../../packages/gateway-protocol/src/schema/config.js";
 import {
   isStandaloneRuntimeExecutable,
   resolveOpenClawCliInvocation,
 } from "../../cli-invocation.mjs";
+import type { PackageUpdateTarget } from "../../packages/gateway-protocol/src/schema/config.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { quoteCliArg } from "../cli/quote-cli-arg.js";
 import { isBunRuntime, isNodeRuntime } from "../daemon/runtime-binary.js";

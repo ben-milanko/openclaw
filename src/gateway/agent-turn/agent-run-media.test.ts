@@ -489,6 +489,7 @@ it.each([false, true])(
     await withOpenClawTestState({ label: "agent-source-reply-media" }, async (state) => {
       const { imagePath: sentPath } = await writeMediaImage(state, "already-sent.png");
       const { imagePath: finalPath } = await writeMediaImage(state, "new-final.png");
+      const idempotencyKey = "already-committed-source-reply";
       // The finalizer consumes the same receipt-backed mirror payload as message-tool delivery.
       // Its existing transcript owner must not be replaced by the terminal assistant row.
       const { replyItems } = buildSourceReplyPayloadState({
@@ -498,6 +499,7 @@ it.each([false, true])(
           {
             text: "Already sent",
             mediaUrls: [sentPath],
+            idempotencyKey,
             transcriptOwner: true,
             sourceReplyFinal: false,
           },
@@ -512,6 +514,14 @@ it.each([false, true])(
           ...replyItems,
           ...(hasNewFinalMedia ? [{ text: "Completed", mediaUrls: [finalPath] }] : []),
         ],
+        committedMirror: {
+          role: "assistant",
+          provider: "openclaw",
+          model: "delivery-mirror",
+          idempotencyKey,
+          content: [{ type: "text", text: "Already sent" }],
+          openclawDisplayContent: [{ type: "text", text: "Already sent" }],
+        },
       });
       expect(result.terminalOutcome.status).toBe("ok");
       expect(context.logGateway.warn).not.toHaveBeenCalled();

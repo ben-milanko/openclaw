@@ -54,6 +54,7 @@ import {
 import { kindFromMime } from "openclaw/plugin-sdk/media-runtime";
 import { createChannelHistoryWindow } from "openclaw/plugin-sdk/reply-history";
 import { resolveBatchedReplyThreadingPolicy } from "openclaw/plugin-sdk/reply-reference";
+import type { ReplyPayload } from "openclaw/plugin-sdk/reply-runtime";
 import { resolveAgentRoute, resolveInboundLastRouteSessionKey } from "openclaw/plugin-sdk/routing";
 import { createRuntimeConfigReader } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { danger, logVerbose } from "openclaw/plugin-sdk/runtime-env";
@@ -405,7 +406,18 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       propagateRetryableNoSendFailure: true,
       humanDelay: resolveHumanDelayConfig(cfg, route.agentId),
       typingCallbacks,
-      ...(assistantRequestsOnly ? { beforeDeliver: filterSignalAssistantReply } : {}),
+      ...(assistantRequestsOnly
+        ? {
+            // Whole-reply control tokens must be filtered before the response prefix is added.
+            transformReplyPayload: (payload: ReplyPayload) => {
+              const filtered = filterSignalAssistantReply(payload);
+              return filtered && replyPipeline.transformReplyPayload
+                ? replyPipeline.transformReplyPayload(filtered)
+                : filtered;
+            },
+            beforeDeliver: filterSignalAssistantReply,
+          }
+        : {}),
     };
     const delivery: ChannelInboundTurnPlan["delivery"] = {
       deliver: async (payload, _info) => {

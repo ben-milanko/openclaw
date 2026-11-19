@@ -26,9 +26,9 @@ import { replaceSessionEntrySync } from "../../config/sessions/session-accessor.
 import * as sessionReplacement from "../../config/sessions/session-accessor.sqlite-replacement-worker.js";
 import * as sessionEntryRead from "../../config/sessions/session-entry-read-runtime.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { captureAmbientGatewayOperatorAuthority } from "../../gateway/operator-invocation-authority.js";
 import { makeCronJob } from "../../cron/delivery.test-helpers.js";
 import { TEST_SCHEDULED_OCCURRENCE } from "../../cron/scheduled-occurrence.test-support.js";
+import { captureAmbientGatewayOperatorAuthority } from "../../gateway/operator-invocation-authority.js";
 import { clearAgentRunContext, registerAgentRunContext } from "../../infra/agent-run-registry.js";
 import {
   enqueueRequiredSystemEventEntry,
@@ -199,46 +199,49 @@ afterAll(() => {
 
 describe("session event target custody", () => {
   it("starts a completion after its producer's Gateway request retires", async () => {
-    await withTargetFixture(async ({ env }) => {
-      const target = await captureTarget("main", sessionKey, { env });
-      let requestActive = true;
-      const resolveGatewayContext = () => undefined;
-      dispatch.mockImplementationOnce(async () => {
-        await captureAmbientGatewayOperatorAuthority({
-          missingBindingError: () => new Error("Missing completion Gateway binding"),
+    await withTargetFixture(
+      async ({ env }) => {
+        const target = await captureTarget("main", sessionKey, { env });
+        let requestActive = true;
+        const resolveGatewayContext = () => undefined;
+        dispatch.mockImplementationOnce(async () => {
+          await captureAmbientGatewayOperatorAuthority({
+            missingBindingError: () => new Error("Missing completion Gateway binding"),
+          });
+          expect(getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext).toBe(
+            resolveGatewayContext,
+          );
+          throw new Error("Completion reached independent dispatch");
         });
-        expect(getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext).toBe(
+        const scope = {
+          isWebchatConnect: () => true,
+          hasCurrentClientAuthority: () => requestActive,
           resolveGatewayContext,
-        );
-        throw new Error("Completion reached independent dispatch");
-      });
-      const scope = {
-        isWebchatConnect: () => true,
-        hasCurrentClientAuthority: () => requestActive,
-        resolveGatewayContext,
-      };
-      const receipt = withPluginRuntimeGatewayRequestScope(scope, () =>
-        enqueueEvent("Process completed", {
-          agentId: "main",
-          sessionKey,
-          source: "exec",
-          expectedTarget: target,
-        }),
-      );
-      requestActive = false;
-      await expect(receipt.settled).resolves.toMatchObject({
-        status: "failed",
-        error: "Error: Completion reached independent dispatch",
-      });
-      await expect(
-        withPluginRuntimeGatewayRequestScope(scope, () =>
-          captureAmbientGatewayOperatorAuthority({
-            missingBindingError: () => new Error("Missing"),
+        };
+        const receipt = withPluginRuntimeGatewayRequestScope(scope, () =>
+          enqueueEvent("Process completed", {
+            agentId: "main",
+            sessionKey,
+            source: "exec",
+            expectedTarget: target,
           }),
-        ),
-      ).rejects.toThrow("Gateway caller authority is no longer active");
-      expect(dispatch).toHaveBeenCalledOnce();
-    }, { expectDispatch: true });
+        );
+        requestActive = false;
+        await expect(receipt.settled).resolves.toMatchObject({
+          status: "failed",
+          error: "Error: Completion reached independent dispatch",
+        });
+        await expect(
+          withPluginRuntimeGatewayRequestScope(scope, () =>
+            captureAmbientGatewayOperatorAuthority({
+              missingBindingError: () => new Error("Missing"),
+            }),
+          ),
+        ).rejects.toThrow("Gateway caller authority is no longer active");
+        expect(dispatch).toHaveBeenCalledOnce();
+      },
+      { expectDispatch: true },
+    );
   });
 
   it("retains scheduled creation restrictions and private skill pins only for absent targets", async ({

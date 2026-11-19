@@ -240,9 +240,10 @@ export function createCronTool(opts?: CronToolOptions): AnyAgentTool {
               opts.creatorToolAllowlistCaptureRef.value.source === "final-executable-surface"
                 ? {
                     cronToolsAllowCapture: "final-executable-surface" as const,
-                    ...(creatorExecToolTarget ? { cronExecToolTarget: creatorExecToolTarget } : {}),
                   }
                 : {}),
+              // A restrict-only target does not attest a complete executable surface.
+              ...(creatorExecToolTarget ? { cronExecToolTarget: creatorExecToolTarget } : {}),
             }
           : undefined;
 

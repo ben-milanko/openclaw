@@ -18,19 +18,22 @@ const {
 } = signalToolResultMocks;
 
 function configure(extra: Record<string, unknown> = {}) {
-  configureSignalToolResultTest({
-    autoStart: false,
-    assistantRequestPrefixes: ["Helper:"],
-    sendReadReceipts: true,
-    reactionLevel: "extensive",
-    ...extra,
-  }, {
-    responsePrefix: "PFX",
-    visibleReplies: "automatic",
-    ackReaction: "👀",
-    ackReactionScope: "all",
-    statusReactions: { enabled: true },
-  });
+  configureSignalToolResultTest(
+    {
+      autoStart: false,
+      assistantRequestPrefixes: ["Helper:"],
+      sendReadReceipts: true,
+      reactionLevel: "extensive",
+      ...extra,
+    },
+    {
+      responsePrefix: "PFX",
+      visibleReplies: "automatic",
+      ackReaction: "👀",
+      ackReactionScope: "all",
+      statusReactions: { enabled: true },
+    },
+  );
 }
 
 function expectNoAutomaticSignals() {

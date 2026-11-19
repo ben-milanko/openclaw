@@ -14,7 +14,7 @@ export function isSignalAssistantRequest(text: string, prefixes: readonly string
   });
 }
 
-/** Runs before core chooses either direct delivery or durable queue admission. */
+/** Runs before response prefixing and again at direct/durable delivery admission. */
 export function filterSignalAssistantReply(payload: ReplyPayload): ReplyPayload | null {
   return payload.isError || isSilentReplyText(payload.text) ? null : payload;
 }

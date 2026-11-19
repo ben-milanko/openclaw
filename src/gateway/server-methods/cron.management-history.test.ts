@@ -194,8 +194,8 @@ describe("automation management history through the agent tool and Gateway route
         },
         async (_identity, admitted, scope) =>
           withHistoryGateway(admitted, context, async () => {
-            const readRecords = historyStore.readCronRunRecords;
-            vi.spyOn(historyStore, "readCronRunRecords").mockImplementationOnce(async (...args) => {
+            const readRecords = historyStore.readCronRunHistoryRecords;
+            vi.spyOn(historyStore, "readCronRunHistoryRecords").mockImplementationOnce(async (...args) => {
               const records = await readRecords(...args);
               if (invalidation === "revocation") {
                 revokeCronCreatorAuthorityRunScope(expectDefined(scope, "management scope"));

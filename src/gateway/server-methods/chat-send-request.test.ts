@@ -57,7 +57,9 @@ async function expectError(
 const toolBindings = { browser: { kind: "tab", tabId: 1, targetId: "target" } };
 const mention = (start: number, end: number, profileId = "bob") => ({ profileId, start, end });
 const goalIntent = (maxContinuationTurns?: number) => ({
-  kind: "session-goal-start", version: 1, issuedAtMs: Date.now(),
+  kind: "session-goal-start",
+  version: 1,
+  issuedAtMs: Date.now(),
   ...(maxContinuationTurns === undefined ? {} : { maxContinuationTurns }),
 });
 async function expectRejected(overrides: Record<string, unknown>, client: Client = humanClient()) {
@@ -226,7 +228,10 @@ it.each(["/stop", "  résumé\n\n  preserve spacing  "])(
       turnKind: "main",
       suppressCommandInterpretation: true,
       goalOperation: {
-        action: "start", objective: message, operationId: "request-1", maxContinuationTurns: 3,
+        action: "start",
+        objective: message,
+        operationId: "request-1",
+        maxContinuationTurns: 3,
       },
     });
   },

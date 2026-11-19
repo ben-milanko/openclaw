@@ -73,7 +73,12 @@ function createMentionHandler(
       cfg: {
         messages: { inbound: { debounceMs: 0 }, groupChat: { mentionPatterns } },
         channels: {
-          signal: { groups, groupPolicy: deps.groupPolicy, groupAllowFrom: deps.groupAllowFrom, assistantRequestPrefixes },
+          signal: {
+            groups,
+            groupPolicy: deps.groupPolicy,
+            groupAllowFrom: deps.groupAllowFrom,
+            assistantRequestPrefixes,
+          },
         },
       },
       groupHistories,
@@ -275,7 +280,10 @@ describe("explicit assistant requests on a personal account", () => {
     "drops ordinary chat and human mentions before dispatch (group=%s)",
     async (group) => {
       const handler = createMentionHandler(
-        { accountUuid: "human-account" }, [], { "*": { requireMention: false } }, ["Helper:"],
+        { accountUuid: "human-account" },
+        [],
+        { "*": { requireMention: false } },
+        ["Helper:"],
       );
       for (const message of [
         "hello",
@@ -302,7 +310,10 @@ describe("explicit assistant requests on a personal account", () => {
     "admits explicit textual requests independent of native mentions (group=%s)",
     async (group) => {
       const handler = createMentionHandler(
-        { accountUuid: "human-account" }, [], { "*": { requireMention: true } }, ["Helper:"],
+        { accountUuid: "human-account" },
+        [],
+        { "*": { requireMention: true } },
+        ["Helper:"],
       );
       await handler(
         createSignalReceiveEvent({

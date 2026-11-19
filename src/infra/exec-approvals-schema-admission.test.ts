@@ -147,7 +147,9 @@ it.skipIf(process.platform === "win32")(
       db: state.openOpenClawStateDatabase({ env }).db,
       file: { version: 1, defaults: { security: "allowlist", ask: "on-miss" } },
     });
-    const assertCurrent = await commitExecAuthorizationLocked(currentPolicyExec("printf synthetic"));
+    const assertCurrent = await commitExecAuthorizationLocked(
+      currentPolicyExec("printf synthetic"),
+    );
     // A different workflow uses this shared store while the command is prepared.
     await useFeature("profiles", env, "concurrent-launch-preparation");
     const marker = path.join(root, "executed.txt");

@@ -6,8 +6,8 @@
 // in-memory object identity only — nothing here is persisted.
 import { asNonArrayRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { getPluginToolExecutionSourceGuard } from "../plugins/plugin-tool-execution.js";
 import { requireValidExecTarget } from "../infra/exec-approvals-core.js";
+import { getPluginToolExecutionSourceGuard } from "../plugins/plugin-tool-execution.js";
 import { markToolExecutionNotStarted } from "./tool-effect-receipt.js";
 import type { AnyAgentTool } from "./tools/common.js";
 

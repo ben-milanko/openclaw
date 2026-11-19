@@ -17,7 +17,6 @@ import {
   removeManagedOutgoingMediaBlocks,
 } from "../managed-image-attachments.js";
 import { hasAssistantDisplayMediaContent } from "../server-methods/chat-assistant-content.js";
-import { isSourceReplyTranscriptMirrorPayload } from "../server-methods/chat-broadcast.js";
 import {
   captureWebchatReplyMediaAuthority,
   prepareWebchatReplyMediaForDisplay,
@@ -51,10 +50,7 @@ export async function finalizeAgentRunMedia(
       options,
     ),
   );
-  // Source-reply mirrors already have their own transcript row, as in chat.send.
-  const plan = candidates.filter(
-    (entry) => visible.has(entry.payload) && !isSourceReplyTranscriptMirrorPayload(entry.payload),
-  );
+  const plan = candidates.filter((entry) => visible.has(entry.payload));
   if (!plan.some(({ parts }) => parts.mediaUrls.length > 0)) {
     return;
   }

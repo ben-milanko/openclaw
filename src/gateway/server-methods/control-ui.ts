@@ -12,6 +12,10 @@ import type { ControlUiLinkReaderSection } from "../../shared/control-ui-link-re
 import { truncateOptionalText } from "../../shared/text-truncate.js";
 import { getSessionRepositoryWorkspaceStore } from "../../state/session-repository-workspaces.js";
 import type { ControlUiSessionPreview } from "../control-ui-contract.js";
+import {
+  GitHubReadRequestInactiveError,
+  prepareControlUiGitHubIdentity,
+} from "../control-ui-github-identity.js";
 import { withControlUiSessionGitHubRead } from "../control-ui-session-github-read.js";
 import type { ControlUiSessionPullRequestChecksParams } from "../control-ui-session-pr-check-details.js";
 import {
@@ -26,10 +30,6 @@ import {
   type ControlUiGitHubPreviewIdentity,
   type ControlUiGitHubSessionIdentity,
 } from "../github-public-api.js";
-import {
-  GitHubReadRequestInactiveError,
-  prepareControlUiGitHubIdentity,
-} from "../control-ui-github-identity.js";
 import { operatorSessionCap } from "../operator-role-policy.js";
 import { resolveRequestedSessionAgentId as resolveRequestedGlobalAgentId } from "../session-request-agent.js";
 import { withReadySessionRows } from "../session-row-prepared-read.js";
@@ -38,11 +38,7 @@ import { createSessionListEntryFilter } from "../session-sharing.js";
 import { retainGatewaySessionEntryReadOnly } from "../session-utils-read-lifetime.js";
 import { resolveAgentIdOrRespondError } from "./agent-id-shared.js";
 import { respondError } from "./response.js";
-import type {
-  GatewayClient,
-  GatewayRequestContext,
-  GatewayRequestHandlers,
-} from "./types.js";
+import type { GatewayClient, GatewayRequestContext, GatewayRequestHandlers } from "./types.js";
 
 function createGitHubReadHandler<
   T extends NonNullable<ReturnType<typeof gitHubPublicApi.parseGitHubTarget>>,

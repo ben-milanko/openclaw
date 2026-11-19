@@ -10,8 +10,8 @@ import { getAdmittedRunDelegatedAuthority } from "../../agents/admitted-run-cont
 import { persistAuthProfileBatch } from "../../agents/auth-profiles/upsert-with-lock.js";
 import { withPreparedEmbeddedGatewayTools } from "../../agents/embedded-agent-runner/run/attempt-gateway-tools.js";
 import { projectEffectiveExecPolicy } from "../../agents/session-permission-exec-mode.js";
-import { createCronTool } from "../../agents/tools/cron-tool.js";
 import { AUTOMATIONS_TOOL_NAME } from "../../agents/tools/automations-tool-name.js";
+import { createCronTool } from "../../agents/tools/cron-tool.js";
 import { setRuntimeConfigSnapshot } from "../../config/config.js";
 import {
   loadSessionEntry,
@@ -169,7 +169,9 @@ function addJob(
   });
 }
 
-it("retains a remote requester's finite native script cap and rejects a revoked write", async ({ signal }) => {
+it("retains a remote requester's finite native script cap and rejects a revoked write", async ({
+  signal,
+}) => {
   const caller = captureGatewayDeviceRevocation(
     fixture.context,
     { deviceId: "remote-script-creator", role: "operator" },
@@ -180,53 +182,76 @@ it("retains a remote requester's finite native script cap and rejects a revoked 
   const runId = "remote-finite-script";
   const creator = expectDefined(admission(runId, client, undefined, caller.isCurrent), "admin");
   try {
-    await inRun(runId, creator, boundTo(fixture, async (_identity, admitted, capability) => {
-      const tool = createCronTool({
-        agentSessionKey: SESSION,
-        agentAccountId: "default",
-        runId,
-        creatorToolAllowlist: [{ name: "exec", execOrigin: "native", execTarget: { host: "gateway", ask: "always" } }],
-        creatorToolAllowlistCaptureRef: {},
-      });
-      const create = (name: string, toolsAllow = ["exec"]) => withPreparedEmbeddedGatewayTools({
-        admittedRunContext: admitted,
-        cronCreatorAuthorityCapability: capability,
-        agentId: "main",
-        sessionKey: SESSION,
-        sessionId: SESSION_ID,
-        agentHarnessId: "openclaw",
-        agentAccountId: "default",
-      }, () => tool.execute(name, {
-        action: "add",
-        job: {
-          name,
-          enabled: false,
-          schedule: { kind: "every", everyMs: 900_000 },
-          sessionTarget: "isolated",
-          payload: { kind: "script", script: "json({state:{checked:true}})", toolsAllow },
-          delivery: { mode: "none" },
-        },
-      }));
-      await create("Finite remote script");
-      const before = await fixture.read();
-      expect(before).toMatchObject([{ name: "Finite remote script", enabled: false, ...ownedJob, payload: { toolsAllow: ["exec"] } }]);
-      const stored = expectDefined(before[0], "stored script");
-      expect(stored.runtimeAuthority).toBeUndefined();
-      expect(stored.toolsAllowProvenance).toBeUndefined();
-      expect(stored.toolsAllowExecTarget).toEqual({ version: 1, host: "gateway", ask: "always" });
-      expect(projectEffectiveExecPolicy({
-        base: { host: "auto", ask: "off", security: "full" },
-        scheduledExecTarget: stored.toolsAllowExecTarget,
-      })).toMatchObject({ host: "gateway", ask: "always", bypassHostApprovalFloors: false });
-      await expect(create("Unavailable tool", ["not_visible"])).rejects.toThrow("Configured MCP authority is unavailable");
-      expect(await fixture.read()).toEqual(before);
-      await fixture.rejectMutation(
-        () => create("Revoked remote script"),
-        /authority.*no longer active/i,
-        () => invalidateGatewayDeviceRevocation(fixture.context, "remote-script-creator", "operator"),
-        signal,
-      );
-    }));
+    await inRun(
+      runId,
+      creator,
+      boundTo(fixture, async (_identity, admitted, capability) => {
+        const tool = createCronTool({
+          agentSessionKey: SESSION,
+          agentAccountId: "default",
+          runId,
+          creatorToolAllowlist: [
+            { name: "exec", execOrigin: "native", execTarget: { host: "gateway", ask: "always" } },
+          ],
+          creatorToolAllowlistCaptureRef: {},
+        });
+        const create = (name: string, toolsAllow = ["exec"]) =>
+          withPreparedEmbeddedGatewayTools(
+            {
+              admittedRunContext: admitted,
+              cronCreatorAuthorityCapability: capability,
+              agentId: "main",
+              sessionKey: SESSION,
+              sessionId: SESSION_ID,
+              agentHarnessId: "openclaw",
+              agentAccountId: "default",
+            },
+            () =>
+              tool.execute(name, {
+                action: "add",
+                job: {
+                  name,
+                  enabled: false,
+                  schedule: { kind: "every", everyMs: 900_000 },
+                  sessionTarget: "isolated",
+                  payload: { kind: "script", script: "json({state:{checked:true}})", toolsAllow },
+                  delivery: { mode: "none" },
+                },
+              }),
+          );
+        await create("Finite remote script");
+        const before = await fixture.read();
+        expect(before).toMatchObject([
+          {
+            name: "Finite remote script",
+            enabled: false,
+            ...ownedJob,
+            payload: { toolsAllow: ["exec"] },
+          },
+        ]);
+        const stored = expectDefined(before[0], "stored script");
+        expect(stored.runtimeAuthority).toBeUndefined();
+        expect(stored.toolsAllowProvenance).toBeUndefined();
+        expect(stored.toolsAllowExecTarget).toEqual({ version: 1, host: "gateway", ask: "always" });
+        expect(
+          projectEffectiveExecPolicy({
+            base: { host: "auto", ask: "off", security: "full" },
+            scheduledExecTarget: stored.toolsAllowExecTarget,
+          }),
+        ).toMatchObject({ host: "gateway", ask: "always", bypassHostApprovalFloors: false });
+        await expect(create("Unavailable tool", ["not_visible"])).rejects.toThrow(
+          "Configured MCP authority is unavailable",
+        );
+        expect(await fixture.read()).toEqual(before);
+        await fixture.rejectMutation(
+          () => create("Revoked remote script"),
+          /authority.*no longer active/i,
+          () =>
+            invalidateGatewayDeviceRevocation(fixture.context, "remote-script-creator", "operator"),
+          signal,
+        );
+      }),
+    );
   } finally {
     caller.release();
   }

@@ -68,7 +68,8 @@ export async function updateCommand(
         }
         const { preparePostgresPoolForUpdate } = await import("../../infra/postgres-sync/pool.js");
         await preparePostgresPoolForUpdate("openclaw update repair");
-        const { withRetainedUpdateRuntime } = await import("../../infra/update-retained-runtime.js");
+        const { withRetainedUpdateRuntime } =
+          await import("../../infra/update-retained-runtime.js");
         return await withRetainedUpdateRuntime(import.meta.url, (retainRuntime) =>
           updateCommandWithRuntime(pinnedOpts, retainRuntime, executorOptions),
         );

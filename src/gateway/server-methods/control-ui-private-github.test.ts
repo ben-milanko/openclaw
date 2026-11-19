@@ -7,7 +7,7 @@ import {
 } from "../../config/runtime-snapshot.js";
 import type { OpenClawConfig } from "../../config/types.js";
 import { createControlUiRequestOptions } from "./control-ui-request.test-support.js";
-import { createControlUiHandlers } from "./control-ui.js";
+import { controlUiHandlers } from "./control-ui.js";
 import { identifiedClient } from "./sessions-sharing.test-support.js";
 import type { RespondFn } from "./types.js";
 
@@ -68,7 +68,7 @@ describe("private GitHub reader access", () => {
       client.connect.scopes = ["operator.read"];
       const requestOptions = createControlUiRequestOptions(() => cfg);
       const target = { owner: "octocat", repo, kind: "pull", number: 572 };
-      const handler = expectDefined(createControlUiHandlers()[method], "GitHub reader handler");
+      const handler = expectDefined(controlUiHandlers[method], "GitHub reader handler");
       const read = async (refresh = false) => {
         const respond = vi.fn<RespondFn>();
         await handler({

@@ -187,7 +187,15 @@ it.each([
       ).toBeUndefined();
       const management = bindCronManagementGrant(runId)!;
       expect(management.managementOnly).toBe(kind === "unknown" && !callerScopedCreation);
-      for (const method of ["cron.list", "cron.get", "cron.runs", "cron.update", "cron.run", "cron.remove", "cron.bind"]) {
+      for (const method of [
+        "cron.list",
+        "cron.get",
+        "cron.runs",
+        "cron.update",
+        "cron.run",
+        "cron.remove",
+        "cron.bind",
+      ]) {
         expect(management.mint(method)).toMatchObject({ runId, token: expect.any(String) });
       }
       const operator = bindActiveOperatorTurnAuthority(runId);

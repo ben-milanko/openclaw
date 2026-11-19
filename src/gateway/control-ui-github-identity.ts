@@ -1,5 +1,5 @@
-import { prepareGitHubReaderIdentity } from "./github-reader-identity.js";
 import { gitHubPublicApi } from "./github-public-api.js";
+import { prepareGitHubReaderIdentity } from "./github-reader-identity.js";
 import { hasGatewayAdminScope } from "./operator-scopes.js";
 import type { GatewayRequestHandlerOptions } from "./server-methods/types.js";
 
@@ -25,7 +25,11 @@ export async function prepareControlUiGitHubIdentity(
       throw new GitHubReadRequestInactiveError();
     }
   };
-  const { identity, assertSelected } = await prepareGitHubReaderIdentity(context, agentId, assertActive);
+  const { identity, assertSelected } = await prepareGitHubReaderIdentity(
+    context,
+    agentId,
+    assertActive,
+  );
   if (!hasGatewayAdminScope(client)) {
     return { identity, assertSelected };
   }

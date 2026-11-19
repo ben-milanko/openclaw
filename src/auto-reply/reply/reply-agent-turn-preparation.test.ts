@@ -462,12 +462,17 @@ it("claims a bounded Goal lifetime slot before handing the turn to execution", a
   const entry = createActiveGoalEntry();
   admit(operation, entry);
   state.loadEntry.mockReturnValue(entry);
-  const turn = await admitted(prepare(
-    createRun({ goalContinuation: { sessionId: "queued-session", goalId: "goal" } }),
-    { sessionEntry: entry, storePath: "/fixture/sessions.json" },
-  ));
+  const turn = await admitted(
+    prepare(createRun({ goalContinuation: { sessionId: "queued-session", goalId: "goal" } }), {
+      sessionEntry: entry,
+      storePath: "/fixture/sessions.json",
+    }),
+  );
   expect(state.patchEntry).toHaveBeenCalledOnce();
-  expect(turn.session.current()?.goal).toMatchObject({ maxContinuationTurns: 3, continuationTurns: 1 });
+  expect(turn.session.current()?.goal).toMatchObject({
+    maxContinuationTurns: 3,
+    continuationTurns: 1,
+  });
 });
 
 it("does not admit a Goal whose lifetime limit was consumed before its writer claim", async () => {

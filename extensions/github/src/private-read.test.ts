@@ -69,6 +69,11 @@ it("keeps public agent search admission public even when handed a private reader
     Response.json({ id: 123, private: true, visibility: "private" }),
   );
   await expect(
-    assertPublicGitHubRepository("https://api.github.com/repos/example/private", fetcher, identity.token, identity),
+    assertPublicGitHubRepository(
+      "https://api.github.com/repos/example/private",
+      fetcher,
+      identity.token,
+      identity,
+    ),
   ).rejects.toMatchObject({ statusCode: 404 });
 });

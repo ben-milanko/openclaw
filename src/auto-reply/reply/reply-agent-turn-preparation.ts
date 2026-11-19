@@ -687,7 +687,11 @@ export async function prepareReplyAgentTurn<TConfigured>(
         // it to execution. Its snapshot/CAS and memory actor paths preserve current
         // goal/generation facts; cancellation and owner authority guard the effect.
         const updated = await patchSessionEntryCore(
-          { agentId: run.agentId, sessionKey: replySessionKey, storePath: params.defaults.storePath },
+          {
+            agentId: run.agentId,
+            sessionKey: replySessionKey,
+            storePath: params.defaults.storePath,
+          },
           (entry) => {
             if (
               operation.abortSignal.aborted ||
@@ -696,7 +700,9 @@ export async function prepareReplyAgentTurn<TConfigured>(
             ) {
               return null;
             }
-            return { goal: { ...entry.goal!, continuationTurns: entry.goal!.continuationTurns + 1 } };
+            return {
+              goal: { ...entry.goal!, continuationTurns: entry.goal!.continuationTurns + 1 },
+            };
           },
           { workerGuard: { assertMutationAllowed: assertAdmissionCurrent } },
         );

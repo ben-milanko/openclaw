@@ -272,7 +272,7 @@ export function createGatewayInstanceRuntime(
       if (closed || !options.isDispatchAvailable()) {
         throw new Error("Gateway instance dispatch unavailable for lifecycle notice");
       }
-      const { getLoadedChannelPlugin } = await loadRecoveryTypingAdapter();
+      const { getLoadedChannelPlugin } = await loadLifecycleTypingAdapter();
       const noticeAllowed = () =>
         getLoadedChannelPlugin(payload.channel)?.messaging?.allowRecoveryNotice?.({
           cfg: options.getContext().getRuntimeConfig(),

@@ -12,8 +12,8 @@ import type {
   CronCreatorToolAllowlistEntry,
   CronToolsAllowCaptureRef,
 } from "../agents/tools/cron-tool.types.js";
-import { getPluginInstance } from "./plugin-instance-scope.js";
 import { registryContainsRuntimePluginIds } from "./active-runtime-registry.js";
+import { getPluginInstance } from "./plugin-instance-scope.js";
 import { createOwnershipRecord } from "./registry-ownership.test-support.js";
 import { createTestPluginRegistry as createTestRegistry } from "./registry-runtime.test-helpers.js";
 import type {
@@ -75,10 +75,7 @@ it.each([false, true])(
             : tools;
         },
       });
-      const provider = expectDefined(
-        builder.registry.providers[0],
-        "registered provider",
-      ).provider;
+      const provider = expectDefined(builder.registry.providers[0], "registered provider").provider;
       const normalize = () =>
         normalizeAgentRuntimeTools({
           provider: "schema-provider",

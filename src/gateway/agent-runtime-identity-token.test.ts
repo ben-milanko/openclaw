@@ -519,10 +519,19 @@ it.each(["signed", "direct"] as const)(
       run.operationalRunInstance.runId,
       { kind: "unknown" },
       { source: "control-ui-admin" },
-      undefined, undefined, undefined, true,
+      undefined,
+      undefined,
+      undefined,
+      true,
     );
     try {
-      const grant = grants.mintCronCreatorAuthorityGrant(scope, undefined, undefined, undefined, "requester");
+      const grant = grants.mintCronCreatorAuthorityGrant(
+        scope,
+        undefined,
+        undefined,
+        undefined,
+        "requester",
+      );
       const params = {
         agentId: "main",
         sessionKey: "agent:main:control-ui",
@@ -530,14 +539,18 @@ it.each(["signed", "direct"] as const)(
         cronCreatorAuthorityGrant: grant,
         cronExecToolTarget: { host: "gateway" as const, ask: "always" as const },
       };
-      const create = async () => mode === "signed" ? createIdentity(params) : api.direct(params);
+      const create = async () => (mode === "signed" ? createIdentity(params) : api.direct(params));
       const identity = await create();
       expect(identity).toMatchObject({ cronCreatorAuthorityGrant: grant });
       expect(identity).not.toHaveProperty("cronToolsAllowCapture");
       expect(identity).toMatchObject({ cronExecToolTarget: { host: "gateway", ask: "always" } });
-      expect(() => grants.mintCronCreatorAuthorityGrant(scope)).toThrow("Automation creation is not granted");
+      expect(() => grants.mintCronCreatorAuthorityGrant(scope)).toThrow(
+        "Automation creation is not granted",
+      );
       grants.revokeCronCreatorAuthorityRunScope(scope);
-      await expect(create()).rejects.toThrow("require tool-surface or authenticated-requester provenance");
+      await expect(create()).rejects.toThrow(
+        "require tool-surface or authenticated-requester provenance",
+      );
     } finally {
       grants.revokeCronCreatorAuthorityRunScope(scope);
     }
