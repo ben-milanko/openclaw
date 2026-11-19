@@ -18,8 +18,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      EXPECTED_SOURCE: 2643eb8d4d442e9d155c3180a71eaa8ad21b8f50
-      EXPECTED_TREE: 0c8c29f0deedb321cf4aa7df65cdae7205af4ed9
+      EXPECTED_SOURCE: 51e074bfe7490a26b23202165dd7988866afdfaf
+      EXPECTED_TREE: 57053845b0c2e557171cfe19b555951d25bbf57e
+      PROTOCOL_SINCE_BASE_SHA: e13cf15ece9bbd969b7362927c315362c90c97ff
       UPSTREAM_SOURCE: e13cf15ece9bbd969b7362927c315362c90c97ff
       GOMEMLIMIT: 4GiB
       GOMAXPROCS: "2"
@@ -30,9 +31,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ben-milanko/openclaw
-          ref: 2643eb8d4d442e9d155c3180a71eaa8ad21b8f50
+          ref: 51e074bfe7490a26b23202165dd7988866afdfaf
           persist-credentials: false
-          fetch-depth: 2
+          fetch-depth: 32
 
       - name: Verify frozen inputs and runner capacity
         shell: bash
@@ -72,6 +73,12 @@ jobs:
         run: |
           set -euo pipefail
           pnpm config:channels:gen
+          pnpm gateway:validators:gen
+          pnpm ui:validators:gen
+          pnpm static:validators:gen
+          pnpm protocol:gen
+          pnpm protocol:gen:kotlin
+          pnpm protocol:gen:swift
           pnpm prompt:snapshots:gen
           python3 - <<'PYTHON'
           import json, os, subprocess
@@ -101,6 +108,8 @@ jobs:
           selected = {name for name in changed if name.endswith('.test.ts') and Path(name).is_file()}
           selected.update(name for name in [
               'src/plugins/registry.factory-bindings.test.ts',
+              'src/agents/tools/cron-tool.stream-exec-policy.test.ts',
+              'src/agents/tools/cron-tool-creator-cap.test.ts',
               'src/agents/tools/cron-tool.schema.test.ts',
               'src/agents/tools/cron-tool-creator-cap.test.ts',
               'src/agents/exec-tool-target-pinning.test.ts',
@@ -123,7 +132,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm tsgo:prod
+          python3 - <<'PYTHON'
+          import os, subprocess
+          from pathlib import Path
+          result = subprocess.run(['pnpm','tsgo:prod'])
+          Path(os.environ['RUNNER_TEMP'],'ben-preparation','types.exit').write_text(str(result.returncode) + '\n')
+          raise SystemExit(result.returncode)
+          PYTHON
 
       - name: Typed lint for exact changed source
         id: lint
@@ -141,12 +156,16 @@ jobs:
               ('extensions/tsconfig.json', ('extensions/',)),
           ]
           failures = []
+          exits = []
           for config, prefixes in groups:
               paths = [name for name in changed if name.startswith(prefixes) and name.endswith(('.ts', '.mts', '.mjs', '.tsx')) and Path(name).is_file()]
               if paths:
                   result = subprocess.run(['node', 'scripts/run-oxlint.mjs', '--type-aware', '--tsconfig', config, *paths])
+                  exits.append({"config": config, "exit": result.returncode, "fileCount": len(paths)})
                   if result.returncode:
                       failures.append((config, result.returncode))
+          import json
+          Path(os.environ['RUNNER_TEMP'],'ben-preparation','lint-exits.json').write_text(json.dumps(exits,indent=2) + '\n')
           raise SystemExit(1 if failures else 0)
           PYTHON
 
@@ -158,12 +177,34 @@ jobs:
         run: |
           set -euo pipefail
           pnpm config:channels:check
+          pnpm gateway:validators:check
+          pnpm ui:validators:check
+          pnpm static:validators:check
+          pnpm protocol:check
           pnpm prompt:snapshots:check
           python3 - <<'PYTHON'
           import json, os, subprocess
           from pathlib import Path
           files = json.loads(Path(os.environ['RUNNER_TEMP'], 'ben-preparation', 'changed-files.json').read_text())
           subprocess.run(['pnpm', 'format:check', *files], check=True)
+          PYTHON
+
+      - name: Retain original diagnostic outcomes
+        if: always()
+        shell: bash
+        env:
+          GENERATE: ${{ steps.generate.outcome }}
+          TESTS: ${{ steps.tests.outcome }}
+          TYPES: ${{ steps.types.outcome }}
+          LINT: ${{ steps.lint.outcome }}
+          READBACK: ${{ steps.readback.outcome }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'], 'ben-preparation')
+          root.mkdir(exist_ok=True)
+          (root / 'original-outcomes.json').write_text(json.dumps({key.lower(): os.environ[key] for key in ['GENERATE','TESTS','TYPES','LINT','READBACK']}, indent=2) + '\n')
           PYTHON
 
       - name: Retain exact preparation outputs
