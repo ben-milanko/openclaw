@@ -56,7 +56,7 @@ export { setSessionInvolvement } from "./session-organizer-batch-mutations.ts";
 export {
   archiveSessionWithUndo,
   archiveSessionTreeWithUndo,
-  confirmRunningSessionsArchive,
+  confirmSessionsArchive,
   promoteSession,
   snoozeSessionWithUndo,
 } from "./session-organizer-archive.runtime.ts";

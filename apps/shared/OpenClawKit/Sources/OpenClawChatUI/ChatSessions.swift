@@ -650,6 +650,7 @@ public struct OpenClawChatSessionEntry: Codable, Identifiable, Sendable, Hashabl
     public var childSessions: [String]?
     public var status: String?
     public var lastRunError: String?
+    public var hasAutomation: Bool?
     public var hasActiveRun: Bool?
     public var activeRunIds: [String]?
     public var hasActiveSubagentRun: Bool?
@@ -739,6 +740,7 @@ public struct OpenClawChatSessionEntry: Codable, Identifiable, Sendable, Hashabl
         childSessions: [String]? = nil,
         status: String? = nil,
         lastRunError: String? = nil,
+        hasAutomation: Bool? = nil,
         hasActiveRun: Bool? = nil,
         activeRunIds: [String]? = nil,
         hasActiveSubagentRun: Bool? = nil,
@@ -798,6 +800,7 @@ public struct OpenClawChatSessionEntry: Codable, Identifiable, Sendable, Hashabl
         self.childSessions = childSessions
         self.status = status
         self.lastRunError = lastRunError
+        self.hasAutomation = hasAutomation
         self.hasActiveRun = hasActiveRun
         self.activeRunIds = activeRunIds
         self.hasActiveSubagentRun = hasActiveSubagentRun

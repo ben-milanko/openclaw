@@ -23,6 +23,7 @@ public struct ChatSessionsSheet: View {
     @Bindable var viewModel: OpenClawChatViewModel
     private let agentID: String?
     @Environment(\.dismiss) private var dismiss
+    @State private var archiveConfirmation = OpenClawChatScheduledArchiveConfirmation()
     @State private var searchText = ""
     @State private var scope: SessionScope = .active
     @State private var scopedIDs: [String] = []
@@ -216,6 +217,7 @@ public struct ChatSessionsSheet: View {
                     .font(OpenClawChatTypography.body)
             }
         }
+        .scheduledArchiveConfirmation(self.archiveConfirmation)
         .modifier(ChatSessionSelectionModeModifier(isSelecting: self.isSelecting && self.scope == .active))
     }
 
@@ -388,8 +390,10 @@ public struct ChatSessionsSheet: View {
 
     private func archiveButton(_ session: OpenClawChatSessionEntry, title: LocalizedStringKey) -> some View {
         Button {
-            self.viewModel.setSessionArchived(session, archived: !session.isArchived)
-            self.refreshScopedSessionsSoon()
+            self.archiveConfirmation.request(sessions: session.isArchived ? [] : [session]) {
+                self.viewModel.setSessionArchived(session, archived: !session.isArchived)
+                self.refreshScopedSessionsSoon()
+            }
         } label: {
             chatActionLabel(title, systemImage: session.isArchived ? "tray.and.arrow.up" : "archivebox")
         }
@@ -447,12 +451,23 @@ public struct ChatSessionsSheet: View {
         .background(.bar)
     }
 
-    private func runBatch(_ action: ChatSessionBatchAction) async {
+    private func runBatch(
+        _ action: ChatSessionBatchAction,
+        confirmedSessions: [OpenClawChatSessionEntry]? = nil) async
+    {
+        if action == .archive, confirmedSessions == nil {
+            let selected = self.displayedSessions.filter { self.selectedSessionKeys.contains($0.key) }
+            self.archiveConfirmation.request(sessions: selected) {
+                Task { await self.runBatch(action, confirmedSessions: selected) }
+            }
+            return
+        }
         self.pendingBatchAction = nil
         guard !self.selectedSessionKeys.isEmpty else { return }
         self.isRunningBatch = true
         defer { self.isRunningBatch = false }
-        let selectedSessions = self.displayedSessions.filter { self.selectedSessionKeys.contains($0.key) }
+        let selectedSessions = confirmedSessions ?? self.displayedSessions
+            .filter { self.selectedSessionKeys.contains($0.key) }
         let result = await self.viewModel.performSessionBatch(
             sessions: selectedSessions,
             action: action)

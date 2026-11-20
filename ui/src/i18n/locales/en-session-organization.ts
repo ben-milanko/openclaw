@@ -38,6 +38,9 @@ const enSessionOrganization = {
       "Archive a persistent conversation and its children, not a hidden worker run.",
     archiveSessionTreeConfirm:
       "Archive {count} sessions, including {session}? Sessions moved to the top level or a group are not included.",
+    archiveSessionConfirm: 'Archive "{session}"?',
+    archiveScheduledWorkers:
+      "Archiving pauses attached scheduled workers. Restoring a session does not resume its workers; re-enable them in Automations.",
     archiveRunningSessions:
       "This selection contains active work. Archiving stops work in the selected sessions.",
     archiveRunningSessionConfirm:

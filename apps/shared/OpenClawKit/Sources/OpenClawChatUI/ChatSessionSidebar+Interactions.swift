@@ -231,7 +231,17 @@ extension ChatSessionSidebar {
         }
     }
 
-    func runSidebarBatch(_ action: ChatSessionSidebarBatch.Action, rows: [OpenClawChatSessionEntry]) {
+    func runSidebarBatch(
+        _ action: ChatSessionSidebarBatch.Action,
+        rows: [OpenClawChatSessionEntry],
+        confirmed: Bool = false)
+    {
+        if action == .archived(true), !confirmed {
+            self.archiveConfirmation.request(sessions: rows) {
+                self.runSidebarBatch(action, rows: rows, confirmed: true)
+            }
+            return
+        }
         let owner = self.viewModel.sidebarData
         let mainKey = self.viewModel.selectedAgentMainSessionKey
         if action == .delete || action == .archived(true), self.viewModel.isAttachmentOwnerPinned,

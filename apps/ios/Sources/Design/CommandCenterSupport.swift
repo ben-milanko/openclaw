@@ -92,6 +92,7 @@ struct CommandSessionActionsModifier: ViewModifier {
     @State private var editor: Editor?
     @State private var draftText = ""
     @State private var confirmsDelete = false
+    @State private var archiveConfirmation = OpenClawChatScheduledArchiveConfirmation()
 
     func body(content: Content) -> some View {
         if self.isEnabled {
@@ -145,13 +146,17 @@ struct CommandSessionActionsModifier: ViewModifier {
                         self.isArchived ? .localized("Unarchive") : .localized("Archive"),
                         systemImage: "archivebox")
                     {
-                        self.patch(archived: self.archivesSession())
+                        let archived = self.archivesSession()
+                        self.archiveConfirmation.request(sessions: archived ? [self.session] : []) {
+                            self.patch(archived: archived)
+                        }
                     }
                 }
                 if self.canDelete {
                     self.deleteButton
                 }
             }
+            .scheduledArchiveConfirmation(self.archiveConfirmation)
             .alert(self.editorTitle, isPresented: self.editorBinding) {
                 TextField(self.editorPlaceholder, text: self.$draftText)
                     .font(OpenClawType.body)

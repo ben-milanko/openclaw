@@ -130,6 +130,7 @@ struct ChatSessionInspectorSheet: View {
     @Bindable var viewModel: OpenClawChatViewModel
 
     @Environment(\.dismiss) private var dismiss
+    @State private var archiveConfirmation = OpenClawChatScheduledArchiveConfirmation()
     @State private var legacySession: OpenClawChatSessionEntry
     private let target: OpenClawChatSessionTarget
     private let sessionID: String?
@@ -247,6 +248,7 @@ struct ChatSessionInspectorSheet: View {
                     }
                 }
             }
+            .scheduledArchiveConfirmation(self.archiveConfirmation)
             .navigationTitle("Thread Info")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -320,8 +322,11 @@ struct ChatSessionInspectorSheet: View {
             get: { self.displayedSession.isArchived },
             set: { archived in
                 guard self.canonicalSession != nil else { return }
-                self.displayedSession.archived = archived
-                self.viewModel.setSessionArchived(self.displayedSession, archived: archived)
+                let session = self.displayedSession
+                self.archiveConfirmation.request(sessions: archived ? [session] : []) {
+                    self.displayedSession.archived = archived
+                    self.viewModel.setSessionArchived(session, archived: archived)
+                }
             })
     }
 
