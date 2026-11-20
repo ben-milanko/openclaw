@@ -10,12 +10,12 @@ out = Path(os.environ['RUNNER_TEMP']) / 'ben-codex'
 receipt = json.loads((out / 'plugin-receipt.json').read_text())
 inputs = json.loads((out / 'old-inputs.json').read_text())
 plugin = out / receipt['archiveFile']
-core = out / 'core/openclaw-2026.11.5-ben-f16ac416.tgz'
+core = out / 'core/openclaw-2026.11.5-ben-4fad25d1.tgz'
 def digest(path):
     with Path(path).open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 assert digest(plugin) == receipt['sha256']
-assert digest(core) == 'd97f2e26b71686080d15fa4f989a6f07438f1dfda66bcea58ba8fd91d96834e8'
+assert digest(core) == 'b01492ed04ec26d7d22c4ca0662427953ff1560548177e2f9ed345da544fc2ba'
 uid, gid = os.getuid(), os.getgid()
 assert uid != 0
 cache = out / 'public-code-cache'
@@ -55,7 +55,7 @@ for phase in ['online', 'offline']:
         assert code == 0, label+' failed; preserve original result/log before retry'
         if name in ['core-install','native-custom-plugin-install']:
             build = json.loads((prefix/'lib/node_modules/openclaw/dist/build-info.json').read_text())
-            assert build['buildId']=='2026.11.5-f16ac416701d-2026-11-19T09-55-45.036Z' and build['commit']==os.environ['EXPECTED_SOURCE'], 'Core was not the exact preserved archive'
+            assert build['buildId']=='2026.11.5-4fad25d192e9-2026-11-20T04-29-41.094Z' and build['commit']==os.environ['CORE_SOURCE'], 'Core was not the exact preserved archive'
         if name=='native-enablement':
             assert json.loads((out/(label+'.stdout')).read_text()) is False, '--no-enable changed disabled policy'
 archive = out / 'paired-offline-npm-cacache.tar'
@@ -65,6 +65,6 @@ with tarfile.open(archive) as package:
     assert all(x.name=='_cacache' or x.name.startswith('_cacache/') for x in members)
     assert all(x.isfile() or x.isdir() for x in members)
     unpacked = sum(x.size for x in members)
-value = {'schemaVersion':1,'status':'qualified','scope':'Fresh public code-only cache plus fresh native local-archive install while disabled; synthetic consent only, no live grants/config/auth/provider calls','core':{'version':'2026.11.5','sha256':digest(core),'buildId':'2026.11.5-f16ac416701d-2026-11-19T09-55-45.036Z','commit':os.environ['EXPECTED_SOURCE']},'plugin':{'version':'2026.11.5','sha256':receipt['sha256'],'sourceCommit':receipt['sourceCommit'],'operatorSource':True},'oldRuntimeDependencyManifest':inputs['runtimeDependencies'],'cache':{'root':'_cacache','sha256':digest(archive),'archiveBytes':archive.stat().st_size,'unpackedBytes':unpacked},'producer':{'freshHome':True,'emptyNpmrc':True,'allowlistedEnv':True,'publicRegistry':'https://registry.npmjs.org/','cacheOnly':True,'offlineNetworkIsolation':'sudo-unshare-net-original-uid-gid-no-supplementary-groups','uid':uid,'gid':gid},'phases':phases,'runId':os.environ['GITHUB_RUN_ID'],'runAttempt':os.environ['GITHUB_RUN_ATTEMPT']}
+value = {'schemaVersion':1,'status':'qualified','scope':'Fresh public code-only cache plus fresh native local-archive install while disabled; synthetic consent only, no live grants/config/auth/provider calls','core':{'version':'2026.11.5','sha256':digest(core),'buildId':'2026.11.5-4fad25d192e9-2026-11-20T04-29-41.094Z','commit':os.environ['CORE_SOURCE']},'plugin':{'version':'2026.11.5','sha256':receipt['sha256'],'sourceCommit':receipt['sourceCommit'],'operatorSource':True},'oldRuntimeDependencyManifest':inputs['runtimeDependencies'],'cache':{'root':'_cacache','sha256':digest(archive),'archiveBytes':archive.stat().st_size,'unpackedBytes':unpacked},'producer':{'freshHome':True,'emptyNpmrc':True,'allowlistedEnv':True,'publicRegistry':'https://registry.npmjs.org/','cacheOnly':True,'offlineNetworkIsolation':'sudo-unshare-net-original-uid-gid-no-supplementary-groups','uid':uid,'gid':gid},'phases':phases,'runId':os.environ['GITHUB_RUN_ID'],'runAttempt':os.environ['GITHUB_RUN_ATTEMPT']}
 (out/'paired-offline-cache-receipt.json').write_text(json.dumps(value,indent=2)+'\n')
 print(json.dumps({'status':'qualified','sha256':value['cache']['sha256'],'archiveBytes':archive.stat().st_size,'phases':len(phases)}))
