@@ -106,7 +106,11 @@ export async function archiveSessionTreeWithUndo(
         t("sessionsView.archiveSessionTreeConfirm", {
           count: String(rows.length),
           session: session.label,
-        }) + (hasActiveWork ? "\n\n" + t("sessionsView.archiveRunningSessions") : ""),
+        }) +
+        (hasActiveWork ? "\n\n" + t("sessionsView.archiveRunningSessions") : "") +
+        (rows.some((row) => row.hasAutomation)
+          ? "\n\n" + t("sessionsView.archiveScheduledWorkers")
+          : ""),
       confirmLabel: t("sessionsView.archiveSessionCount", { count: String(rows.length) }),
       signal: scope.signal,
     });
@@ -126,6 +130,7 @@ export async function archiveSessionTreeWithUndo(
         archived: row.archived,
         category: row.category,
         active: row.key === session.key && session.active,
+        hasAutomation: row.hasAutomation,
         archiveGuard: {
           expectedSidebarRoot: row.sidebarRoot === true,
           expectedCategory: row.category ?? null,
@@ -155,7 +160,7 @@ export async function archiveSessionTreeWithUndo(
 
 type SessionArchiveActivity = Pick<
   SessionActionRow,
-  "hasActiveRun" | "gatewayHasActiveRun" | "hasActiveSubagentRun"
+  "hasActiveRun" | "gatewayHasActiveRun" | "hasActiveSubagentRun" | "hasAutomation"
 >;
 
 function hasActiveArchiveWork(session: SessionArchiveActivity): boolean {
@@ -164,18 +169,32 @@ function hasActiveArchiveWork(session: SessionArchiveActivity): boolean {
   );
 }
 
-export async function confirmRunningSessionsArchive(
+export async function confirmSessionsArchive(
   sessions: readonly (SessionArchiveActivity & Pick<SessionActionRow, "label">)[],
   signal?: AbortSignal,
 ): Promise<boolean> {
-  if (!sessions.some(hasActiveArchiveWork)) {
+  const hasActiveWork = sessions.some(hasActiveArchiveWork);
+  const hasAutomation = sessions.some((session) => session.hasAutomation);
+  if (!hasActiveWork && !hasAutomation) {
     return true;
   }
   const single = sessions.length === 1 ? sessions[0] : undefined;
   return showConfirmDialog({
-    message: single
-      ? t("sessionsView.archiveRunningSessionConfirm", { session: single.label })
-      : t("sessionsView.archiveRunningSessions"),
+    message: [
+      single
+        ? t(
+            hasActiveWork
+              ? "sessionsView.archiveRunningSessionConfirm"
+              : "sessionsView.archiveSessionConfirm",
+            { session: single.label },
+          )
+        : hasActiveWork
+          ? t("sessionsView.archiveRunningSessions")
+          : undefined,
+      hasAutomation ? t("sessionsView.archiveScheduledWorkers") : undefined,
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
     confirmLabel: single
       ? t("sessionsView.archiveSession")
       : t("sessionsView.archiveSessionCount", { count: String(sessions.length) }),
@@ -192,7 +211,7 @@ export async function archiveSessionWithUndo(
     return;
   }
   if (
-    !(await confirmRunningSessionsArchive([session], scope.signal)) ||
+    !(await confirmSessionsArchive([session], scope.signal)) ||
     !host.sessionData.isSessionMutationScopeCurrent(scope)
   ) {
     return;
@@ -225,7 +244,7 @@ export async function archiveSessionsWithUndo(
   if (!host.sessionData.isSessionMutationScopeCurrent(scope)) {
     return;
   }
-  if (await confirmRunningSessionsArchive(rows, scope.signal)) {
+  if (await confirmSessionsArchive(rows, scope.signal)) {
     await archiveConfirmedSessionsWithUndo(host, rows, scope);
   }
 }

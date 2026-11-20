@@ -36,6 +36,7 @@ export type SessionActionRow = Pick<
   gatewayHasActiveRun?: boolean;
   hasActiveRun?: boolean;
   hasActiveSubagentRun?: boolean;
+  hasAutomation?: boolean;
   isChild?: boolean;
   pinnable?: boolean;
   sidebarRoot?: boolean;

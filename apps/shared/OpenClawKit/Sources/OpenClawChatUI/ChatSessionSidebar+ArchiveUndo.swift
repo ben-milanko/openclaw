@@ -159,7 +159,13 @@ extension ChatSessionSidebar {
             self.isCurrentInteractionRow(row)
     }
 
-    func archiveSidebarSession(_ session: OpenClawChatSessionEntry) async {
+    func archiveSidebarSession(_ session: OpenClawChatSessionEntry, confirmed: Bool = false) async {
+        if !session.isArchived, !confirmed {
+            self.archiveConfirmation.request(sessions: [session]) {
+                Task { await self.archiveSidebarSession(session, confirmed: true) }
+            }
+            return
+        }
         if session.isArchived {
             await self.viewModel.restoreSession(session)
             return

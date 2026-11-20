@@ -43,6 +43,7 @@ struct ChatSessionSidebar: View {
     @AppStorage("openclaw.chat.sidebar.emptyGroups") var emptyGroups = ChatSessionSidebarModel.EmptyGroups.filtering
     @State var observedOrder = ChatSessionSidebarModel.ObservedOrder()
     @State var batch = ChatSessionSidebarBatch()
+    @State var archiveConfirmation = OpenClawChatScheduledArchiveConfirmation()
     @State private var lastSnoozeWake = Date.distantPast
     @State var catalogData = ChatSessionSidebarCatalogs()
 
@@ -209,6 +210,7 @@ struct ChatSessionSidebar: View {
 
     private func presentingDialogs(_ content: some View) -> some View {
         content
+            .scheduledArchiveConfirmation(self.archiveConfirmation)
             .confirmationDialog(
                 String(format: String(localized: "Delete %lld threads?"), self.batch.pendingDelete.count),
                 isPresented: Binding(

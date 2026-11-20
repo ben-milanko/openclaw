@@ -285,6 +285,7 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
       hasActiveRun: candidate.hasActiveRun ?? candidate.status === "running",
       gatewayHasActiveRun: candidate.hasActiveRun,
       hasActiveSubagentRun: candidate.hasActiveSubagentRun,
+      hasAutomation: candidate.hasAutomation,
     });
     const session = toActionSession(row);
     // Refresh metadata only on the selected instance; replacements must keep

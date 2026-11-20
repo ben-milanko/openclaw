@@ -40,6 +40,7 @@ public struct OpenClawChatWindowShell: View {
     public nonisolated static let assistantReasoningDefaultsKey = "openclaw.webchat.showAssistantReasoning"
     public nonisolated static let assistantToolActivityDefaultsKey = "openclaw.webchat.showAssistantToolActivity"
 
+    @State private var archiveConfirmation = OpenClawChatScheduledArchiveConfirmation()
     @State private var viewModel: OpenClawChatViewModel
     @State private var windowCommands: OpenClawChatWindowCommands
     @Environment(\.colorScheme) private var colorScheme
@@ -163,6 +164,7 @@ public struct OpenClawChatWindowShell: View {
             }, content: {
                 self.commandPalette
             })
+        .scheduledArchiveConfirmation(self.archiveConfirmation)
         .confirmationDialog(
             "Clear this thread's history?",
             isPresented: self.$isConfirmingClearHistory)
@@ -446,9 +448,12 @@ public struct OpenClawChatWindowShell: View {
             }) == true {
                 Button {
                     if let activeSessionEntry = self.activeSessionEntry {
-                        self.viewModel.setSessionArchived(
-                            activeSessionEntry,
-                            archived: !activeSessionEntry.isArchived)
+                        self.archiveConfirmation
+                            .request(sessions: activeSessionEntry.isArchived ? [] : [activeSessionEntry]) {
+                                self.viewModel.setSessionArchived(
+                                    activeSessionEntry,
+                                    archived: !activeSessionEntry.isArchived)
+                            }
                     }
                 } label: {
                     chatWindowActionLabel(
