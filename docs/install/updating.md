@@ -45,6 +45,12 @@ backup.
 
 ## Update implementation contract
 
+Candidate Doctor compares pending plugin migration obligations independently of
+plugin order and repair guidance. A changed owner, protected path, or migration
+requirement still refuses input publication; diagnostics name added or removed
+owners even when the displayed ID summary is truncated. The candidate must contain
+this repair; the installed updater needs no schema or protocol change.
+
 Engine identification reads the committed SQLite engine anchor in an isolated
 read-only transaction without copying a healthy live database. Hot rollback
 journals and incomplete WAL families retain private recovery, and unreadable or

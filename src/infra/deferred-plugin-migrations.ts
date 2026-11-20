@@ -26,6 +26,7 @@ import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worke
 import type { WorkerOperationHandlers } from "../state/worker-operation-registry.js";
 import {
   deferredPluginMigrationSchema,
+  sameDeferredPluginMigrationInputs,
   type DeferredPluginMigration,
 } from "./deferred-plugin-migrations.contract.js";
 import { isTruthyEnvValue } from "./env.js";
@@ -183,18 +184,25 @@ function formatChangedObligationFields(
   expected: readonly DeferredPluginMigration[],
   current: readonly DeferredPluginMigration[],
 ): string {
+  const expectedIds = new Set(expected.map((entry) => entry.pluginId));
   const currentById = new Map(current.map((entry) => [entry.pluginId, entry]));
   const fields = deferredPluginMigrationSchema.keyof().options;
   const changed: string[] = [];
   for (const before of expected) {
     const after = currentById.get(before.pluginId);
     if (!after) {
+      changed.push(`${before.pluginId}:removed`);
       continue;
     }
     for (const field of fields) {
       if (!isDeepStrictEqual(before[field], after[field])) {
         changed.push(`${before.pluginId}:${field}`);
       }
+    }
+  }
+  for (const after of current) {
+    if (!expectedIds.has(after.pluginId)) {
+      changed.push(`${after.pluginId}:added`);
     }
   }
   return formatConflictIds(changed);
@@ -264,7 +272,7 @@ function assertPendingGeneration(
   expected: readonly DeferredPluginMigration[],
   phase: string,
 ): void {
-  if (!isDeepStrictEqual(current, expected)) {
+  if (!sameDeferredPluginMigrationInputs(current, expected)) {
     throw new DeferredPluginMigrationConflictError(current, { expected, phase });
   }
 }
@@ -453,7 +461,7 @@ export function withDeferredPluginMigrationsCurrent<T>(
   const result = runOpenClawStateWriteTransaction(
     ({ db }) => {
       const pending = pendingMigrationRecords(readPendingMigrationRows(db));
-      if (!isDeepStrictEqual(pending, expectedPending) && params.onConflict) {
+      if (params.onConflict && !sameDeferredPluginMigrationInputs(pending, expectedPending)) {
         // Commit preservation facts against these rows; callers refuse publication after return.
         return params.onConflict(pending);
       }
